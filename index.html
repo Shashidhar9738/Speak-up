@@ -183,6 +183,69 @@ body {
 .card-title i { color: var(--accent); font-size: 17px; }
 .card-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
 
+/* EXECUTIVE BRIEFING — a dark hero, deliberately unlike the cards below it.
+   This is the product's claim: an intelligence layer, not a ticket queue. */
+.exec {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 1fr 296px; gap: 30px;
+  background:
+    radial-gradient(120% 140% at 88% 0%, rgba(124,109,242,.30) 0%, transparent 55%),
+    radial-gradient(90% 120% at 0% 100%, rgba(79,70,229,.22) 0%, transparent 60%),
+    linear-gradient(135deg, #14162a 0%, #1b1e35 55%, #191b2e 100%);
+  border-radius: 18px; padding: 26px 30px; margin-bottom: 20px;
+  box-shadow: 0 14px 34px -12px rgba(16,20,40,.55), inset 0 1px 0 rgba(255,255,255,.07);
+  color: #e9ecf5;
+}
+/* A status rail down the left edge: colour without a coloured slab. */
+.exec::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--exec-rail, var(--accent-2));
+}
+.exec-critical { --exec-rail: #f04747; }
+.exec-warning  { --exec-rail: #f0a020; }
+.exec-ok       { --exec-rail: #22c07f; }
+
+.exec-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px;
+  color: #7d87a6; font-weight: 700; margin-bottom: 9px;
+}
+.exec-headline {
+  font-size: 25px; font-weight: 700; letter-spacing: -.7px; line-height: 1.2;
+  margin-bottom: 18px; color: #fff;
+}
+.exec-points { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.exec-point {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 13.5px; line-height: 1.55; color: #b9c0d4;
+}
+.exec-point i { font-size: 17px; flex-shrink: 0; margin-top: 1px; }
+.exec-point.p-critical i { color: #ff6b6b; }
+.exec-point.p-warning i { color: #ffbb54; }
+.exec-point.p-ok i { color: #3ddc97; }
+.exec-point.p-neutral i { color: #8b93b5; }
+.exec-point strong { color: #fff; font-weight: 600; }
+
+.exec-act {
+  background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09);
+  border-radius: 13px; padding: 17px 18px; align-self: start;
+  backdrop-filter: blur(6px);
+}
+.exec-act-id {
+  font-family: ui-monospace, Menlo, monospace; font-size: 13.5px;
+  font-weight: 600; color: #fff; letter-spacing: .3px;
+}
+.exec-act-cat { font-size: 11.5px; color: #8b93b5; margin-top: 4px; }
+.exec-act-sum { font-size: 12.5px; color: #b9c0d4; line-height: 1.6; margin-top: 11px; }
+.exec-act .action-btn {
+  background: #fff; color: #14162a; border: 0; font-weight: 600; width: 100%;
+}
+.exec-act .action-btn:hover { background: #e6e9f5; color: #14162a; }
+
+@media (max-width: 1024px) {
+  .exec { grid-template-columns: 1fr; gap: 20px; padding: 22px; }
+  .exec-headline { font-size: 21px; }
+}
+
 /* CHART SIZING — Chart.js needs a definite parent height with
    maintainAspectRatio:false, or the canvas grows on every resize. */
 .chart-holder { position: relative; width: 100%; }
@@ -414,6 +477,8 @@ body {
   </div>
 
   <!-- STATS -->
+  <div id="execSummary"></div>
+
   <div class="stats-grid" id="statsGrid"></div>
 
   <!-- TAB BAR -->
@@ -723,6 +788,146 @@ function renderStats(metrics) {
       (trend.length ? ' across ' + trend.length + ' weeks' : '') +
       (critical ? ' \u00b7 ' + critical + ' need attention' : '');
   }
+}
+
+/**
+ * Executive summary.
+ *
+ * A CXO opening this has one question: what needs me, today? Counts and charts
+ * answer that only after interpretation, so this band does the interpretation
+ * and states it in sentences, with the raw numbers still below for anyone who
+ * wants to check the working.
+ */
+function renderExecSummary(metrics, submissions) {
+  const host = document.getElementById('execSummary');
+  if (!host) { return; }
+
+  const trend = metrics.weeklyTrend || [];
+  const currentWeek = isoWeek(new Date().toISOString());
+  const complete = trend.filter(t => t.week !== currentWeek);
+  const thisWeek = complete.length ? complete[complete.length - 1].count : 0;
+  const lastWeek = complete.length > 1 ? complete[complete.length - 2].count : 0;
+  const delta = thisWeek - lastWeek;
+
+  const open = submissions.filter(s => s.status === 'open');
+  const p1Open = open.filter(s => s.priority === 'P1');
+  const p2Open = open.filter(s => s.priority === 'P2');
+
+  // Breaching SLA is the one thing that turns a complaint into a liability.
+  const SLA_DAYS = { P1: 1, P2: 5, P3: 30 };
+  const overdue = open.filter(s => {
+    const days = (Date.now() - new Date(s.createdAt).getTime()) / 86400000;
+    return days > (SLA_DAYS[s.priority] || 30);
+  }).sort(comparePriorityClient);
+
+  // A department appearing repeatedly is a pattern, not a one-off.
+  const byDept = {};
+  submissions.forEach(s => { byDept[s.department] = (byDept[s.department] || 0) + 1; });
+  const hotspot = Object.entries(byDept).sort((a, b) => b[1] - a[1])[0];
+  const hotspotShare = hotspot && submissions.length
+    ? Math.round((hotspot[1] / submissions.length) * 100) : 0;
+
+  const oldestOpen = open.slice().sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0];
+  const oldestDays = oldestOpen
+    ? Math.floor((Date.now() - new Date(oldestOpen.createdAt).getTime()) / 86400000) : 0;
+
+  // Headline: the most serious true statement about the current state.
+  let headline;
+  let tone;
+  if (p1Open.length) {
+    headline = `${p1Open.length} critical report${p1Open.length > 1 ? 's' : ''} awaiting action`;
+    tone = 'critical';
+  } else if (overdue.length) {
+    headline = `${overdue.length} report${overdue.length > 1 ? 's are' : ' is'} past its response target`;
+    tone = 'warning';
+  } else if (open.length) {
+    headline = `${open.length} report${open.length > 1 ? 's' : ''} open, all within target`;
+    tone = 'ok';
+  } else {
+    headline = 'Nothing open right now';
+    tone = 'ok';
+  }
+
+  const points = [];
+
+  if (p1Open.length) {
+    const cats = [...new Set(p1Open.map(s => s.category))].join(' and ');
+    points.push({
+      icon: 'ti-alert-triangle', tone: 'critical',
+      text: `<strong>${p1Open.length} critical</strong> open in ${esc(cats)} — target response is 24 hours.`
+    });
+  }
+  if (overdue.length) {
+    points.push({
+      icon: 'ti-clock-exclamation', tone: 'warning',
+      text: `<strong>${overdue.length} past target</strong>, the oldest open for ${oldestDays} days.`
+    });
+  }
+  if (lastWeek) {
+    const pct = Math.abs(Math.round((delta / lastWeek) * 100));
+    points.push({
+      icon: delta > 0 ? 'ti-trending-up' : 'ti-trending-down',
+      tone: delta > 0 ? 'warning' : 'ok',
+      text: delta === 0
+        ? `Volume flat week on week (${thisWeek}).`
+        : `Volume <strong>${delta > 0 ? 'up' : 'down'} ${pct}%</strong> week on week (${lastWeek} → ${thisWeek}).`
+    });
+  }
+  if (hotspot && hotspotShare >= 20 && submissions.length >= 5) {
+    points.push({
+      icon: 'ti-building', tone: 'neutral',
+      text: `<strong>${esc(hotspot[0])}</strong> accounts for ${hotspotShare}% of all reports.`
+    });
+  }
+  if (p2Open.length) {
+    points.push({
+      icon: 'ti-flag', tone: 'neutral',
+      text: `${p2Open.length} high-priority open, target 5 working days.`
+    });
+  }
+  if (!points.length) {
+    points.push({ icon: 'ti-circle-check', tone: 'ok', text: 'No outstanding actions.' });
+  }
+
+  const act = overdue.length ? overdue[0] : (p1Open[0] || null);
+
+  host.innerHTML = `
+    <div class="exec exec-${tone}">
+      <div class="exec-main">
+        <div class="exec-label">Where things stand</div>
+        <div class="exec-headline">${esc(headline)}</div>
+        <ul class="exec-points">
+          ${points.slice(0, 4).map(p => `
+            <li class="exec-point p-${p.tone}">
+              <i class="ti ${p.icon}"></i><span>${p.text}</span>
+            </li>`).join('')}
+        </ul>
+      </div>
+      ${act ? `
+      <div class="exec-act">
+        <div class="exec-label">Start here</div>
+        <div class="exec-act-id">${esc(act.id)}</div>
+        <div class="exec-act-cat">${esc(act.category)} &middot; ${esc(act.department)}</div>
+        <div class="exec-act-sum">${esc((act.summary || '').slice(0, 110))}</div>
+        <button class="action-btn resolve" id="execJump" style="margin-top:12px;">Open critical issues</button>
+      </div>` : ''}
+    </div>`;
+
+  const jump = document.getElementById('execJump');
+  if (jump) {
+    jump.addEventListener('click', () => {
+      const tab = document.querySelector('.tab[data-tab="critical"]');
+      if (tab) { tab.click(); }
+    });
+  }
+}
+
+// Client-side mirror of the server's priority ordering.
+function comparePriorityClient(left, right) {
+  const order = { P1: 0, P2: 1, P3: 2 };
+  const tier = (order[left.priority] ?? 9) - (order[right.priority] ?? 9);
+  if (tier !== 0) { return tier; }
+  return new Date(left.createdAt) - new Date(right.createdAt);
 }
 
 /* ----------------------------- CHARTS ----------------------------- */
@@ -1295,6 +1500,7 @@ async function loadAll(options) {
     const total = (metrics.totals && metrics.totals.submissions) || 0;
 
     renderStats(metrics);
+    renderExecSummary(metrics, state.submissions);
     renderWeeklyChart(metrics.weeklyTrend || []);
     renderCategoryBars(metrics.categoryCounts || {});
     renderTrendChart(state.submissions, metrics.weeklyTrend || []);
