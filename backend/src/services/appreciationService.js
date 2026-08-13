@@ -271,6 +271,124 @@ function buildAppreciationMetrics(list, knownTeams) {
   };
 }
 
+
+/**
+ * Bright Spots digest — a weekly leadership summary of appreciation.
+ *
+ * Returned as HTML so it can be pasted into an email or opened in a browser.
+ * The PNG "shareable card" from the original spec is deliberately not built:
+ * it needs headless rendering, and the digest carries almost all of the value
+ * at a fraction of the cost.
+ *
+ * Recipients are named — that is the point of recognition. Nominators are NOT,
+ * unless they explicitly attributed themselves.
+ */
+function buildDigest(list, options) {
+  const settings = options || {};
+  const days = Number(settings.days || 7);
+  const since = Date.now() - days * 86400000;
+  const recent = list.filter((a) => new Date(a.createdAt).getTime() >= since);
+
+  const byRecipient = {};
+  const byCategory = {};
+  recent.forEach((a) => {
+    byRecipient[a.recipientName] = (byRecipient[a.recipientName] || 0) + 1;
+    byCategory[a.category] = (byCategory[a.category] || 0) + 1;
+  });
+
+  const spotlights = recent.filter((a) => a.spotlight);
+  const rest = recent.filter((a) => !a.spotlight);
+  const byDetail = (a, b) => (b.messageText || "").length - (a.messageText || "").length;
+
+  // Spotlights lead, then the longest notes — detail is what makes recognition
+  // feel earned. Filling from the rest matters: showing only the one
+  // spotlighted item would hide everything else that came in that week.
+  const highlights = spotlights.slice().sort(byDetail)
+    .concat(rest.slice().sort(byDetail))
+    .slice(0, 5);
+
+  return {
+    periodDays: days,
+    generatedAt: new Date().toISOString(),
+    total: recent.length,
+    uniqueRecipients: Object.keys(byRecipient).length,
+    spotlights: spotlights.length,
+    byCategory,
+    topRecipients: Object.entries(byRecipient)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count })),
+    highlights: highlights.map((a) => ({
+      id: a.id,
+      recipientName: a.recipientName,
+      recipientTeam: a.recipientTeam,
+      category: a.category,
+      messageText: a.messageText,
+      from: a.revealed ? a.nominatorName : "a colleague",
+      spotlight: a.spotlight
+    }))
+  };
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function digestToHtml(digest) {
+  const label = (id) => {
+    const found = CATEGORIES.find((c) => c.id === id);
+    return found ? found.label : id;
+  };
+  const colour = (id) => {
+    const found = CATEGORIES.find((c) => c.id === id);
+    return found ? found.colour : "#64748b";
+  };
+
+  const cards = digest.highlights.map((h) => `
+    <tr><td style="padding:0 0 12px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e8ebf0;border-left:3px solid ${colour(h.category)};border-radius:10px;">
+        <tr><td style="padding:15px 17px;">
+          <div style="font:600 15px Inter,Arial,sans-serif;color:#0f1420;">
+            ${escapeHtml(h.recipientName)}
+            <span style="font:500 11px Inter,Arial,sans-serif;color:${colour(h.category)};background:${colour(h.category)}1a;padding:3px 9px;border-radius:20px;margin-left:6px;">${escapeHtml(label(h.category))}</span>
+            ${h.spotlight ? '<span style="font:600 11px Inter,Arial,sans-serif;color:#92400e;background:#fef3c7;padding:3px 9px;border-radius:20px;margin-left:4px;">Spotlight</span>' : ""}
+          </div>
+          <div style="font:400 13.5px/1.6 Inter,Arial,sans-serif;color:#5b6474;margin-top:9px;">${escapeHtml(h.messageText)}</div>
+          <div style="font:400 11.5px Inter,Arial,sans-serif;color:#98a1b0;margin-top:10px;">${escapeHtml(h.recipientTeam)} &middot; from ${escapeHtml(h.from)}</div>
+        </td></tr>
+      </table>
+    </td></tr>`).join("");
+
+  const recipients = digest.topRecipients.map((r) =>
+    `<span style="display:inline-block;font:500 12px Inter,Arial,sans-serif;background:#eef1fe;color:#4f46e5;padding:4px 11px;border-radius:20px;margin:0 5px 5px 0;">${escapeHtml(r.name)} &times;${r.count}</span>`
+  ).join("");
+
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:620px;margin:0 auto;">
+    <tr><td style="background:linear-gradient(135deg,#14162a,#1b1e35);border-radius:16px;padding:26px 28px;">
+      <div style="font:700 11px Inter,Arial,sans-serif;color:#7d87a6;letter-spacing:1.3px;text-transform:uppercase;">Bright spots &middot; last ${digest.periodDays} days</div>
+      <div style="font:700 25px Inter,Arial,sans-serif;color:#fff;letter-spacing:-.7px;margin-top:8px;">
+        ${digest.total} ${digest.total === 1 ? "person was" : "people were"} thanked by a colleague
+      </div>
+      <div style="font:400 13.5px Inter,Arial,sans-serif;color:#b9c0d4;margin-top:7px;">
+        ${digest.uniqueRecipients} named individually${digest.spotlights ? ` &middot; ${digest.spotlights} spotlighted` : ""}
+      </div>
+    </td></tr>
+    <tr><td style="height:20px;"></td></tr>
+    ${digest.topRecipients.length ? `<tr><td style="padding-bottom:16px;">
+      <div style="font:600 12px Inter,Arial,sans-serif;color:#5b6474;margin-bottom:8px;">Recognised most</div>
+      ${recipients}
+    </td></tr>` : ""}
+    ${cards || `<tr><td style="font:400 13px Inter,Arial,sans-serif;color:#98a1b0;padding:20px;text-align:center;">
+      No appreciation in this period.</td></tr>`}
+    <tr><td style="font:400 11.5px Inter,Arial,sans-serif;color:#98a1b0;padding-top:14px;text-align:center;">
+      Nominators stay anonymous unless they chose to be named.
+    </td></tr>
+  </table></body></html>`;
+}
+
 module.exports = {
   CATEGORIES,
   CATEGORY_IDS,
@@ -281,5 +399,7 @@ module.exports = {
   revealNominator,
   publicAppreciation,
   buildAppreciationMetrics,
-  suggestReplies
+  suggestReplies,
+  buildDigest,
+  digestToHtml
 };

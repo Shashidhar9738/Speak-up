@@ -73,19 +73,74 @@ function pickCategory(text) {
   return bestCategory;
 }
 
-function summarize(text) {
+// Sentences naming a consequence are why leadership is reading at all.
+const SIGNAL_TERMS = [
+  "resign", "quit", "attrit", "notice period", "leaving",
+  "harass", "retaliat", "threat", "discriminat", "bully", "abus", "hostil",
+  "burnout", "burnt out", "exhaust", "overwork", "weekend", "overtime", "understaff",
+  "fraud", "leak", "breach", "illegal", "brib", "unsafe",
+  "unpaid", "underpaid", "salar", "bonus", "reimburs", "pending",
+  "ignored", "no action", "nothing happened", "no response", "unresolv", "unaddress",
+  "urgent", "immediately", "repeatedly", "multiple times", "again", "escalat"
+];
+const SIGNAL_PATTERN = toStemPattern(SIGNAL_TERMS);
+
+function splitSentences(text) {
+  return text.replace(/\s+/g, " ").trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 15);
+}
+
+/**
+ * Extractive summary: pick the most important sentences ALREADY in the text.
+ *
+ * The previous version truncated at the first sentence boundary under 160
+ * characters, so a report whose opening line was throat-clearing and whose
+ * second line said "three people have already resigned" showed leadership only
+ * the throat-clearing. Nothing here is rewritten — sentences are scored and
+ * selected, so no model and no network call is involved.
+ */
+function summarize(text, limit = 2) {
   const cleaned = text.replace(/\s+/g, " ").trim();
-  if (cleaned.length <= 160) {
-    return cleaned;
+  const sentences = splitSentences(cleaned);
+
+  if (sentences.length <= limit) {
+    return cleaned.length <= 320 ? cleaned : `${cleaned.slice(0, 317).trim()}...`;
   }
-  // Prefer cutting at a sentence or word boundary rather than mid-word.
-  const window = cleaned.slice(0, 157);
-  const sentenceEnd = window.lastIndexOf(". ");
-  if (sentenceEnd > 90) {
-    return window.slice(0, sentenceEnd + 1);
-  }
-  const wordEnd = window.lastIndexOf(" ");
-  return `${window.slice(0, wordEnd > 0 ? wordEnd : 157).trim()}...`;
+
+  // The complaint's own recurring vocabulary.
+  const frequency = {};
+  (cleaned.toLowerCase().match(/[a-z]{4,}/g) || []).forEach((word) => {
+    frequency[word] = (frequency[word] || 0) + 1;
+  });
+
+  const scored = sentences.map((sentence, index) => {
+    const words = sentence.toLowerCase().match(/[a-z]{4,}/g) || [];
+
+    // Topical weight, normalised so a long rambling sentence does not win on
+    // length alone.
+    let score = words.reduce((sum, word) => sum + Math.min(frequency[word] || 0, 3), 0);
+    score = score / Math.sqrt(words.length || 1);
+
+    // Signal weight is applied AFTER normalisation and dominates: a sentence
+    // naming a consequence must outrank a well-phrased one about the seating
+    // plan. Applying it before normalisation let short sentences bury it.
+    SIGNAL_PATTERN.lastIndex = 0;
+    const signals = (sentence.match(SIGNAL_PATTERN) || []).length;
+    score += signals * 10;
+
+    if (index === 0) { score += 0.5; }
+
+    return { sentence, index, score };
+  });
+
+  return scored
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .sort((left, right) => left.index - right.index)
+    .map((item) => item.sentence)
+    .join(" ");
 }
 
 /**

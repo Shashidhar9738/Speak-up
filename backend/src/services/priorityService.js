@@ -22,7 +22,10 @@ const PRIORITY_TIERS = [
       "harass", "retaliat", "discriminat", "assault", "abus", "threat", "bully",
       "unsafe", "illegal", "fraud", "brib", "corrupt", "breach", "data leak",
       "sexual", "racis", "casteis", "molest", "violence", "suicid", "self harm",
-      "whistleblow", "cover up", "coverup", "falsif", "forged"
+      "whistleblow", "cover up", "coverup", "falsif", "forged",
+      // Identity-based remarks are harassment however politely they are phrased.
+      "accent", "religio", "caste", "gender", "ethnic", "disabilit", "pregnan",
+      "slur", "derogat", "humiliat", "intimidat", "hostile"
     ]
   },
   {
@@ -33,11 +36,16 @@ const PRIORITY_TIERS = [
     sla: "5 working days",
     description: "People are leaving, being underpaid, or being ignored.",
     terms: [
-      "resign", "quit", "attrit", "notice period", "leaving",
+      "resign", "quit", "attrit", "leaving",
+      // "notice" on its own: "handed in their notice" is the common phrasing and
+      // "notice period" alone missed it entirely.
+      "notice", "exit interview", "backfill", "headcount",
       "burnout", "burnt out", "exhaust", "overwork", "understaff",
       "unpaid", "underpaid", "withheld", "reimburs", "pending", "salary",
       "ignored", "no action", "nothing happened", "no response", "unresolved",
-      "repeatedly", "multiple times", "months", "escalat", "urgent", "immediately"
+      "heard nothing", "no reply", "no update", "never responded", "still waiting",
+      "repeatedly", "multiple times", "months", "escalat", "urgent", "immediately",
+      "separate occasions", "out of pocket"
     ]
   },
   {

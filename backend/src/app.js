@@ -147,6 +147,7 @@ function buildApiInventory() {
       { method: "GET", path: "/api/appreciations/:id/suggested-replies", purpose: "Suggested thank-you wording" },
       { method: "POST", path: "/api/appreciations/:id/acknowledge", purpose: "Acknowledge an appreciation" },
       { method: "POST", path: "/api/admin/spotlights/:id", purpose: "Owner-only spotlight toggle" },
+      { method: "GET", path: "/api/export/brightspots", purpose: "Weekly recognition digest (json or html)" },
       { method: "GET", path: "/api/dashboard/submissions", purpose: "Filtered admin submission feed" },
       { method: "GET", path: "/api/dashboard/metrics", purpose: "Dashboard aggregate payload" },
       { method: "GET", path: "/api/dashboard/categories", purpose: "Category distribution payload" },
@@ -921,6 +922,21 @@ app.post("/api/admin/spotlights/:id", requireAdmin, requireOwner, async (request
     return next(createHttpError(404, "No such appreciation"));
   }
   return response.json({ appreciation: appreciation.publicAppreciation(updated) });
+});
+
+app.get("/api/export/brightspots", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot generate the digest"));
+  }
+
+  const list = await appreciation.listAppreciations({});
+  const digest = appreciation.buildDigest(list, { days: Number(request.query.days) || 7 });
+
+  if (String(request.query.format || "json").toLowerCase() === "html") {
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    return response.send(appreciation.digestToHtml(digest));
+  }
+  return response.json({ digest });
 });
 
 app.get("/api/todo/apis", (request, response) => {

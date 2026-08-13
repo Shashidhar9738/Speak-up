@@ -146,10 +146,11 @@ word-boundary stem matching, so `pressur` matches pressure/pressured/pressuring.
 
 Every ticket carries its reason, e.g. `Matched P1 keyword: retaliation`.
 
-**Known limitation:** `summarize()` truncates at the first sentence boundary
-rather than summarising. A long report's most important sentence can fall outside
-the summary shown on the dashboard. The full text is always stored and visible
-when the report is opened.
+Summaries are **extractive**: sentences are scored and the two most important
+are selected. Nothing is rewritten, so no model and no network call is involved.
+A sentence naming a consequence — someone resigned, HR did nothing, it is unsafe
+— outranks one that merely reads well, which is why a report opening with
+throat-clearing still surfaces its real point.
 
 ---
 
@@ -179,6 +180,7 @@ the repo, because it names real people.
 ```bash
 npm start            # run
 npm run dev          # run with auto-restart
+npm test             # frontend tests (jsdom)
 npm run build        # static bundle into dist/ (frontend only — no API)
 ```
 
