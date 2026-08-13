@@ -15,26 +15,25 @@ not a wall of counts.
 |---|---|
 | Source | https://github.com/Shashidhar9738/Speak-up |
 | Local | `npm start` → http://127.0.0.1:3000 — **fully working** |
-| GitHub Pages | https://shashidhar9738.github.io/Speak-up/ — **pages load, nothing works** |
+| GitHub Pages | https://shashidhar9738.github.io/Speak-up/ — **demo mode**, sample data, nothing saves |
 | Hosted (working) | not deployed yet — `render.yaml` is ready |
 
-### Why the GitHub Pages link does not work
+### What the GitHub Pages link is
 
-GitHub Pages serves **static files only**. It has no Node runtime, so the entire
-backend is absent. The HTML loads and then every API call fails:
+GitHub Pages serves **static files only** — no Node runtime, so the backend is
+absent and every API call would 404. Rather than ship a broken shell,
+`assets/demo-mode.js` detects the missing backend and answers from sample data,
+so the UI can be shown and shared.
 
-```
-GET  /index.html      → 200   (page renders)
-GET  /api/health      → 404   (no backend)
-POST /api/auth/login  → 405   (Pages rejects POST outright)
-```
+It is a demo, not a deployment:
 
-Sign-in, submissions, and the dashboard data all depend on that backend. The
-Pages link is therefore a **broken shell**, not a demo — it will show an empty
-dashboard and a login that always fails.
+- a permanent banner says the data is not real
+- nothing is saved; actions that would persist say so rather than pretending
+- it activates **only** when `/api/health` is unreachable, so a real deployment
+  is never silently replaced by sample data
 
-To get a working URL, deploy to a Node host (see *Deploying* below). Either turn
-Pages off, or keep it only as a link to the repo.
+For a working instance with real data and logins, deploy to a Node host — see
+*Deploying*.
 
 ---
 
