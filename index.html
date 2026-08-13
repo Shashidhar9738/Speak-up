@@ -388,6 +388,35 @@ body {
 }
 .modal-close:hover { background: var(--border-soft); color: var(--text); }
 
+/* PASSWORD DIALOG */
+.pwd-field { margin-bottom: 14px; }
+.pwd-field label { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 5px; }
+.pwd-field input {
+  width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; background: #fff;
+}
+.pwd-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+.pwd-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 5px; }
+/* Length-led strength meter: a long passphrase beats a short cryptic one. */
+.pwd-meter { height: 4px; border-radius: 3px; background: var(--border-soft); margin-top: 8px; overflow: hidden; }
+.pwd-meter-fill { height: 100%; width: 0; border-radius: 3px; transition: width 250ms, background 250ms; }
+.pwd-actions { display: flex; gap: 9px; margin-top: 18px; }
+.btn-solid {
+  font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 0; border-radius: 9px; padding: 11px 18px; background: var(--accent); color: #fff;
+}
+.btn-solid:hover:not(:disabled) { background: #4338ca; }
+.btn-solid:disabled { opacity: .55; cursor: not-allowed; }
+.btn-quiet {
+  font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 18px;
+  background: #fff; color: var(--text-sec);
+}
+.pwd-alert { border-radius: 9px; padding: 11px 13px; font-size: 12.5px; margin-top: 14px; display: none; line-height: 1.5; }
+.pwd-alert.show { display: block; }
+.pwd-alert.error { background: var(--danger-light); color: #991b1b; }
+.pwd-alert.ok { background: var(--success-light); color: #065f46; }
+
 /* SENTIMENT BARS */
 .sentiment-bar { display: flex; height: 34px; border-radius: 9px; overflow: hidden; margin-bottom: 11px; }
 .sentiment-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; }
@@ -414,6 +443,18 @@ body {
   .p-stats { text-align: left; }
 }
 
+
+/* PASSWORD REVEAL */
+.pwd-wrap { position: relative; }
+.pwd-wrap input { padding-right: 42px !important; width: 100%; }
+.pwd-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; cursor: pointer; padding: 6px 8px;
+  color: #9ca3af; font-size: 17px; line-height: 1; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.pwd-toggle:hover { color: #4f46e5; background: rgba(79,70,229,.08); }
+.pwd-toggle:focus-visible { outline: 2px solid #4f46e5; outline-offset: 1px; }
 </style>
 </head>
 <body>
@@ -442,6 +483,7 @@ body {
     <a class="nav-item" href="submit.html" target="_blank"><i class="ti ti-external-link"></i> Submission page</a>
     <a class="nav-item" id="usersBtn" href="users.html" style="display:none;"><i class="ti ti-users"></i> Access management</a>
     <a class="nav-item" id="exportBtn" href="#"><i class="ti ti-download"></i> Export CSV</a>
+    <a class="nav-item" id="pwdBtn" href="#"><i class="ti ti-key"></i> Change password</a>
     <a class="nav-item" id="logoutBtn" href="#"><i class="ti ti-logout"></i> Sign out</a>
   </div>
 
@@ -586,6 +628,37 @@ body {
 </div>
 
 <!-- MODAL -->
+<div class="modal-overlay" id="pwdModal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Change password</div>
+      <button class="modal-close" id="pwdClose">&times;</button>
+    </div>
+    <form id="pwdForm">
+      <div class="pwd-field">
+        <label for="pwdCurrent">Current password</label>
+        <input type="password" id="pwdCurrent" autocomplete="current-password" required>
+      </div>
+      <div class="pwd-field">
+        <label for="pwdNew">New password</label>
+        <input type="password" id="pwdNew" autocomplete="new-password" required minlength="10">
+        <div class="pwd-meter"><div class="pwd-meter-fill" id="pwdMeter"></div></div>
+        <div class="pwd-hint" id="pwdStrength">At least 10 characters. A few unrelated words works well.</div>
+      </div>
+      <div class="pwd-field">
+        <label for="pwdConfirm">Confirm new password</label>
+        <input type="password" id="pwdConfirm" autocomplete="new-password" required>
+      </div>
+      <div class="pwd-actions">
+        <button type="submit" class="btn-solid" id="pwdSave">Update password</button>
+        <button type="button" class="btn-quiet" id="pwdCancel">Cancel</button>
+      </div>
+      <div class="pwd-alert error" id="pwdError"></div>
+      <div class="pwd-alert ok" id="pwdOk"></div>
+    </form>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal">
   <div class="modal">
     <div class="modal-header">
@@ -1535,6 +1608,95 @@ document.getElementById('logoutBtn').addEventListener('click', async function (e
   location.href = 'login.html';
 });
 
+/* ----------------------------- PASSWORD ----------------------------- */
+var pwdModal = document.getElementById('pwdModal');
+
+function openPwd() {
+  document.getElementById('pwdForm').reset();
+  document.getElementById('pwdError').classList.remove('show');
+  document.getElementById('pwdOk').classList.remove('show');
+  document.getElementById('pwdMeter').style.width = '0';
+  pwdModal.classList.add('open');
+  document.getElementById('pwdCurrent').focus();
+}
+
+function closePwd() { pwdModal.classList.remove('open'); }
+
+document.getElementById('pwdBtn').addEventListener('click', function (event) {
+  event.preventDefault();
+  if (window.SPEAKUP_DEMO) {
+    alert('Changing the password needs the backend, which the demo does not have.');
+    return;
+  }
+  openPwd();
+});
+document.getElementById('pwdClose').addEventListener('click', closePwd);
+document.getElementById('pwdCancel').addEventListener('click', closePwd);
+pwdModal.addEventListener('click', function (event) {
+  if (event.target === pwdModal) { closePwd(); }
+});
+
+// Length carries most of the entropy, so the meter is length-led rather than
+// rewarding a short password for containing a symbol.
+document.getElementById('pwdNew').addEventListener('input', function () {
+  var value = this.value;
+  var score = Math.min(value.length / 20, 1) * 70;
+  if (/[a-z]/.test(value) && /[A-Z0-9]/.test(value)) { score += 15; }
+  if (/[^A-Za-z0-9]/.test(value)) { score += 15; }
+  score = Math.min(Math.round(score), 100);
+
+  var meter = document.getElementById('pwdMeter');
+  meter.style.width = score + '%';
+  meter.style.background = score < 40 ? 'var(--danger)' : score < 70 ? 'var(--warning)' : 'var(--success)';
+
+  document.getElementById('pwdStrength').textContent =
+    value.length < 10 ? 'At least 10 characters \u2014 ' + (10 - value.length) + ' more to go.'
+      : score < 70 ? 'Acceptable. Longer would be stronger.'
+      : 'Strong.';
+});
+
+document.getElementById('pwdForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('pwdError');
+  var okBox = document.getElementById('pwdOk');
+  errorBox.classList.remove('show');
+  okBox.classList.remove('show');
+
+  var current = document.getElementById('pwdCurrent').value;
+  var next = document.getElementById('pwdNew').value;
+  var confirmValue = document.getElementById('pwdConfirm').value;
+
+  if (next !== confirmValue) {
+    errorBox.textContent = 'The new passwords do not match.';
+    errorBox.classList.add('show');
+    return;
+  }
+  if (next === current) {
+    errorBox.textContent = 'The new password must be different from the current one.';
+    errorBox.classList.add('show');
+    return;
+  }
+
+  var button = document.getElementById('pwdSave');
+  button.disabled = true;
+  button.textContent = 'Updating\u2026';
+
+  try {
+    await SpeakUpApi.changePassword(current, next);
+    okBox.textContent = 'Password updated. Use it the next time you sign in.';
+    okBox.classList.add('show');
+    document.getElementById('pwdForm').reset();
+    document.getElementById('pwdMeter').style.width = '0';
+    setTimeout(closePwd, 2200);
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not update the password.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Update password';
+  }
+});
+
 document.getElementById('exportBtn').addEventListener('click', async function (event) {
   event.preventDefault();
   try {
@@ -1614,6 +1776,58 @@ document.getElementById('sortBy').addEventListener('change', function () {
   await loadAll();
   // Keep the "Live" badge honest.
   setInterval(() => loadAll({ silent: true }), 30000);
+})();
+
+/* Reveal toggle on every password field. Shows what is being typed only —
+   stored passwords are scrypt hashes and cannot be read back by anyone. */
+(function () {
+  function attach(input) {
+    if (input.dataset.revealReady) { return; }
+    input.dataset.revealReady = '1';
+
+    var wrap = document.createElement('span');
+    wrap.className = 'pwd-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pwd-toggle';
+    button.setAttribute('aria-label', 'Show password');
+    button.innerHTML = '<i class="ti ti-eye"></i>';
+
+    button.addEventListener('click', function () {
+      var showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      button.innerHTML = showing ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>';
+      button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      input.focus();
+    });
+
+    // Never leave a password on screen after the user moves on.
+    input.addEventListener('blur', function () {
+      if (input.type === 'text') {
+        input.type = 'password';
+        button.innerHTML = '<i class="ti ti-eye"></i>';
+        button.setAttribute('aria-label', 'Show password');
+      }
+    });
+
+    wrap.appendChild(button);
+  }
+
+  function scan() {
+    document.querySelectorAll('input[type=password]').forEach(attach);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scan);
+  } else {
+    scan();
+  }
+  // The change-password dialog is in the DOM from the start, but scan again
+  // after load in case anything is injected later.
+  setTimeout(scan, 400);
 })();
 </script>
 </body>

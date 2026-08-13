@@ -28,6 +28,7 @@ const {
   publicUser
 } = require("./services/userService");
 const { validatePassword, hashPassword, MIN_LENGTH } = require("./services/passwordService");
+const appreciation = require("./services/appreciationService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -139,6 +140,13 @@ function buildApiInventory() {
       { method: "POST", path: "/api/track/:id/messages", purpose: "Anonymous reporter reply via access code" },
       { method: "POST", path: "/api/track/:id/edit", purpose: "Reporter edits own report inside the edit window" },
       { method: "GET", path: "/api/priority-tiers", purpose: "Keyword to priority mapping and colour codes" },
+      { method: "GET", path: "/api/appreciations/categories", purpose: "Appreciation categories" },
+      { method: "POST", path: "/api/appreciations", purpose: "Submit appreciation (open, no account)" },
+      { method: "POST", path: "/api/appreciations/:id/reveal", purpose: "Nominator opts in to attribution" },
+      { method: "GET", path: "/api/dashboard/appreciation", purpose: "Appreciation metrics and balance alerts" },
+      { method: "GET", path: "/api/appreciations/:id/suggested-replies", purpose: "Suggested thank-you wording" },
+      { method: "POST", path: "/api/appreciations/:id/acknowledge", purpose: "Acknowledge an appreciation" },
+      { method: "POST", path: "/api/admin/spotlights/:id", purpose: "Owner-only spotlight toggle" },
       { method: "GET", path: "/api/dashboard/submissions", purpose: "Filtered admin submission feed" },
       { method: "GET", path: "/api/dashboard/metrics", purpose: "Dashboard aggregate payload" },
       { method: "GET", path: "/api/dashboard/categories", purpose: "Category distribution payload" },
@@ -783,6 +791,117 @@ app.get("/api/dashboard/export.csv", requireAdmin, async (request, response, nex
   return response.send(toCsv(filtered));
 });
 
+/* ---------------------------- APPRECIATION ----------------------------
+ * The positive counterpart to a complaint. Submitting is open to everyone and
+ * needs no account, exactly like a report — but here the RECIPIENT is named and
+ * the nominator stays anonymous unless they later choose otherwise.
+ * -------------------------------------------------------------------- */
+
+app.get("/api/appreciations/categories", (request, response) => {
+  response.json({ categories: appreciation.CATEGORIES });
+});
+
+app.post("/api/appreciations", submissionRateLimiter, async (request, response, next) => {
+  const messageText = String(request.body?.messageText || "").trim();
+  const recipientName = String(request.body?.recipientName || "").trim();
+
+  if (!recipientName) {
+    return next(createHttpError(400, "Who are you appreciating?"));
+  }
+  if (messageText.length < 10) {
+    return next(createHttpError(400, "Please write at least 10 characters"));
+  }
+  if (messageText.length > config.maxMessageLength) {
+    return next(createHttpError(400, `Message must be ${config.maxMessageLength} characters or fewer`));
+  }
+
+  const created = await appreciation.createAppreciation({
+    recipientName,
+    recipientTeam: request.body?.recipientTeam,
+    category: String(request.body?.category || "").trim(),
+    messageText,
+    fromTeam: request.body?.fromTeam
+  });
+
+  // The code is returned once. It is the only way the nominator can come back
+  // and attach their name, and only a hash of it is stored.
+  return response.status(201).json({
+    appreciation: appreciation.publicAppreciation(created.appreciation),
+    accessCode: created.accessCode
+  });
+});
+
+app.post("/api/appreciations/:id/reveal", submissionRateLimiter, async (request, response, next) => {
+  const result = await appreciation.revealNominator(
+    String(request.params.id || "").trim(),
+    String(request.body?.accessCode || "").trim(),
+    request.body?.nominatorName
+  );
+
+  if (result.error) {
+    return next(createHttpError(404, result.error));
+  }
+  return response.json({ appreciation: appreciation.publicAppreciation(result.appreciation) });
+});
+
+app.get("/api/dashboard/appreciation", requireAdmin, async (request, response) => {
+  const list = await appreciation.listAppreciations(request.query);
+  const submissions = await listSubmissions();
+  const knownTeams = [...new Set(submissions.map((s) => s.department))];
+
+  return response.json({
+    metrics: appreciation.buildAppreciationMetrics(list, knownTeams),
+    categories: appreciation.CATEGORIES,
+    appreciations: list.slice(0, 50).map(appreciation.publicAppreciation)
+  });
+});
+
+app.get("/api/appreciations/:id/suggested-replies", requireAdmin, async (request, response, next) => {
+  const found = await appreciation.getById(request.params.id);
+  if (!found) {
+    return next(createHttpError(404, "No such appreciation"));
+  }
+  return response.json({ suggestions: appreciation.suggestReplies(found) });
+});
+
+app.post("/api/appreciations/:id/acknowledge", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).respond) {
+    return next(createHttpError(403, "Your role cannot acknowledge appreciation"));
+  }
+
+  const updated = await appreciation.updateAppreciation(request.params.id, (current) => ({
+    ...current,
+    status: "acknowledged",
+    acknowledgedBy: request.user.email,
+    acknowledgedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }));
+
+  if (!updated) {
+    return next(createHttpError(404, "No such appreciation"));
+  }
+  return response.json({ appreciation: appreciation.publicAppreciation(updated) });
+});
+
+// Spotlights are an owner decision: publishing praise is a visible act, so it
+// carries the same governance as changing someone's access.
+app.post("/api/admin/spotlights/:id", requireAdmin, requireOwner, async (request, response, next) => {
+  const on = request.body?.spotlight !== false;
+
+  const updated = await appreciation.updateAppreciation(request.params.id, (current) => ({
+    ...current,
+    spotlight: on,
+    spotlightBy: on ? request.user.email : null,
+    spotlightAt: on ? new Date().toISOString() : null,
+    updatedAt: new Date().toISOString()
+  }));
+
+  if (!updated) {
+    return next(createHttpError(404, "No such appreciation"));
+  }
+  return response.json({ appreciation: appreciation.publicAppreciation(updated) });
+});
+
 app.get("/api/todo/apis", (request, response) => {
   response.json(buildApiInventory());
 });
@@ -799,6 +918,7 @@ const PUBLIC_PAGES = {
   "/login.html": "login.html",
   "/track.html": "track.html",
   "/register.html": "register.html",
+  "/appreciation.html": "appreciation.html",
   "/users.html": "users.html"
 };
 

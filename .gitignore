@@ -6,8 +6,8 @@
 node_modules/
 dist/
 
-# Runtime data — real complaints and real employee email addresses.
-# Neither belongs in version control.
+# Runtime data — real complaints, employee email addresses, and appreciation
+# records that name individuals. None of it belongs in version control.
 backend/data/
 !backend/data/.gitkeep
 

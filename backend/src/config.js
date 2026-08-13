@@ -60,6 +60,11 @@ module.exports = {
   dataFilePath: process.env.SPEAKUP_DATA_FILE || path.join(__dirname, "..", "data", "submissions.json"),
   userFilePath: process.env.SPEAKUP_USER_FILE || path.join(__dirname, "..", "data", "users.json"),
 
+  // Appreciation lives in its own store: it names a recipient, whereas a
+  // complaint must never name its author. Keeping them apart makes it far
+  // harder for a query written for one to leak the other.
+  appreciationFilePath: process.env.SPEAKUP_APPRECIATION_FILE || path.join(__dirname, "..", "data", "appreciations.json"),
+
   // Bootstrap owners. These are approved automatically so there is always
   // someone able to approve the first registrations.
   adminEmails: parseAdminEmails(process.env.SPEAKUP_ADMIN_EMAILS),

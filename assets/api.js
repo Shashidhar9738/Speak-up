@@ -189,6 +189,41 @@
       return request("/api/submissions", { method: "POST", body: payload });
     },
 
+    // Appreciation — open like a report, but the recipient is named and the
+    // nominator stays anonymous unless they later opt in.
+    appreciationCategories: function () {
+      return request("/api/appreciations/categories");
+    },
+
+    appreciate: function (payload) {
+      return request("/api/appreciations", { method: "POST", body: payload });
+    },
+
+    revealNominator: function (id, accessCode, nominatorName) {
+      return request("/api/appreciations/" + encodeURIComponent(id) + "/reveal", {
+        method: "POST",
+        body: { accessCode: accessCode, nominatorName: nominatorName }
+      });
+    },
+
+    appreciationDashboard: function (query) {
+      return request("/api/dashboard/appreciation" + toQueryString(query), { auth: true });
+    },
+
+    suggestedReplies: function (id) {
+      return request("/api/appreciations/" + encodeURIComponent(id) + "/suggested-replies", { auth: true });
+    },
+
+    acknowledgeAppreciation: function (id) {
+      return request("/api/appreciations/" + encodeURIComponent(id) + "/acknowledge", { method: "POST", auth: true });
+    },
+
+    setSpotlight: function (id, on) {
+      return request("/api/admin/spotlights/" + encodeURIComponent(id), {
+        method: "POST", auth: true, body: { spotlight: on !== false }
+      });
+    },
+
     // Reporter-side: authenticated by access code only, never a bearer token.
     track: function (id, accessCode) {
       return request("/api/track/" + encodeURIComponent(id), {
