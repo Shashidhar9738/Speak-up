@@ -63,8 +63,6 @@ Date: 2026-08-13
 
 - [ ] `GET /api/dashboard/export.pdf`  
   Leadership PDF export — Phase 2
-- [ ] `POST /api/auth/sso/callback`  
-  Enterprise SSO callback — Phase 3
 - [ ] `POST /api/integrations/hris/webhook`  
   HRIS synchronization — Phase 3
 - [ ] `POST /api/submissions/:id/escalate`  

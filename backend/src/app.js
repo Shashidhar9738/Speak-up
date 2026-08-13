@@ -159,7 +159,6 @@ function buildApiInventory() {
     ],
     backlog: [
       { method: "GET", path: "/api/dashboard/export.pdf", phase: "Phase 2", purpose: "Leadership PDF export" },
-      { method: "POST", path: "/api/auth/sso/callback", phase: "Phase 3", purpose: "Enterprise SSO callback" },
       { method: "POST", path: "/api/integrations/hris/webhook", phase: "Phase 3", purpose: "HRIS synchronization" },
       { method: "POST", path: "/api/submissions/:id/escalate", phase: "Phase 3", purpose: "Compliance escalation workflow" },
       { method: "GET", path: "/api/compliance/audit-log", phase: "Phase 3", purpose: "Compliance audit trail" }
