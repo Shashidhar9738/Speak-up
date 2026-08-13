@@ -65,6 +65,18 @@ module.exports = {
   // harder for a query written for one to leak the other.
   appreciationFilePath: process.env.SPEAKUP_APPRECIATION_FILE || path.join(__dirname, "..", "data", "appreciations.json"),
 
+  // SQLite: a single file inside the project. No server, no cloud, no account.
+  // Backing it up is copying one file.
+  databaseFile: process.env.SPEAKUP_DB_FILE || path.join(__dirname, "..", "data", "speakup.db"),
+
+  // Append-only audit trail. A file, not a table: nothing in the running app
+  // can rewrite it, and it is never served over HTTP.
+  auditFile: process.env.SPEAKUP_AUDIT_FILE || path.join(__dirname, "..", "data", "audit.log"),
+
+  // Email verification on registration. Turned off by default: with no SMTP
+  // configured it only added a step that had to be worked around.
+  requireVerification: String(process.env.SPEAKUP_REQUIRE_VERIFICATION || "false").toLowerCase() === "true",
+
   // Bootstrap owners. These are approved automatically so there is always
   // someone able to approve the first registrations.
   adminEmails: parseAdminEmails(process.env.SPEAKUP_ADMIN_EMAILS),

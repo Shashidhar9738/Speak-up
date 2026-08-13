@@ -183,6 +183,19 @@ body {
 .card-title i { color: var(--accent); font-size: 17px; }
 .card-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
 
+/* STAFF HEADER — deliberately calmer than the leadership briefing. Someone who
+   cannot act on a report should not be shown an action queue. */
+.staff-band {
+  display: flex; align-items: flex-start; gap: 14px;
+  background: var(--card); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: var(--radius);
+  padding: 20px 22px; margin-bottom: 20px; box-shadow: var(--shadow);
+}
+.staff-band i { font-size: 21px; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.staff-title { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+.staff-body { font-size: 13px; color: var(--text-sec); line-height: 1.6; margin-top: 5px; }
+.staff-scope { font-size: 11.5px; color: var(--text-muted); margin-top: 9px; }
+
 /* EXECUTIVE BRIEFING — a dark hero, deliberately unlike the cards below it.
    This is the product's claim: an intelligence layer, not a ticket queue. */
 .exec {
@@ -1641,7 +1654,11 @@ async function loadAll(options) {
     const total = (metrics.totals && metrics.totals.submissions) || 0;
 
     renderStats(metrics);
-    renderExecSummary(metrics, state.submissions);
+    if (uiFor(state.scope.role).briefing === 'staff') {
+      renderStaffBand(metrics, state.scope);
+    } else {
+      renderExecSummary(metrics, state.submissions);
+    }
     renderWeeklyChart(metrics.weeklyTrend || []);
     renderCategoryBars(metrics.categoryCounts || {});
     renderTrendChart(state.submissions, metrics.weeklyTrend || []);
@@ -1834,6 +1851,87 @@ document.addEventListener('click', function (event) {
   });
 });
 
+
+/* --------------------------- ROLE INTERFACES ---------------------------
+ * A staff reader and a CXO were being shown the same screen. They are not
+ * doing the same job: leadership triages and acts, everyone else is looking
+ * for context. Showing an action queue to someone with no ability to act is
+ * noise, and framing it as "what needs you today" is actively misleading.
+ *
+ * This is presentation only — the server independently refuses anything a
+ * role may not do, so hiding a tab is never the access control itself.
+ * --------------------------------------------------------------------- */
+var ROLE_UI = {
+  owner:    { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends'],
+              briefing: 'exec', title: 'Leadership dashboard' },
+  reviewer: { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends'],
+              briefing: 'exec', title: 'Review dashboard' },
+  lead:     { tabs: ['overview','categories','heatmap','feed','recognition','trends'],
+              briefing: 'exec', title: 'Department dashboard' },
+  staff:    { tabs: ['overview','categories','heatmap','trends','recognition'],
+              briefing: 'staff', title: 'Employee view' },
+  analyst:  { tabs: ['overview','categories','heatmap','trends'],
+              briefing: 'staff', title: 'Analytics view' }
+};
+
+function uiFor(role) { return ROLE_UI[role] || ROLE_UI.analyst; }
+
+function applyRoleInterface(scope) {
+  var ui = uiFor(scope.role);
+  var allowed = {};
+  ui.tabs.forEach(function (t) { allowed[t] = true; });
+
+  document.querySelectorAll('.tab[data-tab]').forEach(function (tab) {
+    if (!allowed[tab.dataset.tab]) { tab.style.display = 'none'; }
+  });
+  document.querySelectorAll('.nav-item[data-nav]').forEach(function (nav) {
+    if (!allowed[nav.dataset.nav]) { nav.style.display = 'none'; }
+  });
+
+  // If the active tab is one this role cannot see, move to the first it can.
+  var active = document.querySelector('.tab.active');
+  if (active && !allowed[active.dataset.tab]) {
+    var first = document.querySelector('.tab[data-tab="' + ui.tabs[0] + '"]');
+    if (first) { first.click(); }
+  }
+
+  document.querySelector('.sidebar-sub').textContent = ui.title;
+  return ui;
+}
+
+/**
+ * The staff band answers "what is going on here", not "what must I do".
+ * No SLA breaches, no start-here ticket, no urgency framing.
+ */
+function renderStaffBand(metrics, scope) {
+  var host = document.getElementById('execSummary');
+  if (!host) { return; }
+
+  var totals = metrics.totals || {};
+  var resolvedPct = totals.submissions ? Math.round((totals.resolved / totals.submissions) * 100) : 0;
+  var categories = Object.keys(metrics.categoryCounts || {}).length;
+
+  var scopeNote = scope.departments === 'all'
+    ? 'You can see reports from every department'
+    : 'You can see reports from ' + (scope.departments || []).join(', ');
+
+  host.innerHTML =
+    '<div class="staff-band">' +
+      '<i class="ti ti-eye"></i>' +
+      '<div>' +
+        '<div class="staff-title">What people are raising</div>' +
+        '<div class="staff-body">' +
+          esc(totals.submissions || 0) + ' reports in view across ' + esc(categories) + ' categories. ' +
+          esc(resolvedPct) + '% have been resolved' +
+          (totals.open ? ', ' + esc(totals.open) + ' are still open.' : '.') +
+          ' Sensitive reports are handled separately by compliance and are not shown here.' +
+        '</div>' +
+        '<div class="staff-scope">' + esc(scopeNote) +
+          (scope.seesRawText ? '' : ' &middot; report text is hidden for your role') + '</div>' +
+      '</div>' +
+    '</div>';
+}
+
 /* ----------------------------- SESSION ----------------------------- */
 
 document.getElementById('logoutBtn').addEventListener('click', async function (event) {
@@ -1981,6 +2079,8 @@ document.getElementById('sortBy').addEventListener('change', function () {
   state.scope = profile.scope || {};
   document.getElementById('sidebarEmail').textContent =
     profile.user.email + ' — ' + (state.scope.roleLabel || '');
+  applyRoleInterface(state.scope);
+
   if (state.scope.canManageUsers) {
     document.getElementById('usersBtn').style.display = '';
   }

@@ -216,6 +216,78 @@ test("index.html: shows admin controls to an owner", async () => {
   assert.notEqual(window.document.getElementById("exportBtn").style.display, "none");
 });
 
+/* ---------------- role-specific interfaces ---------------- */
+
+function scopeFor(role, extra = {}) {
+  const caps = {
+    owner:    { canManageUsers: true,  canExport: true,  canRespond: true,  seesRawText: true },
+    reviewer: { canManageUsers: false, canExport: true,  canRespond: true,  seesRawText: true },
+    lead:     { canManageUsers: false, canExport: false, canRespond: true,  seesRawText: true },
+    staff:    { canManageUsers: false, canExport: false, canRespond: false, seesRawText: true },
+    analyst:  { canManageUsers: false, canExport: false, canRespond: false, seesRawText: false }
+  }[role];
+  return { role, roleLabel: role, departments: "all", seesSensitive: role === "owner" || role === "reviewer", ...caps, ...extra };
+}
+
+async function dashboardAs(role) {
+  return loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: `${role}@comviva.com`, role }, scope: scopeFor(role) })
+    }
+  });
+}
+
+function visibleTabs(window) {
+  return [...window.document.querySelectorAll(".tab[data-tab]")]
+    .filter((tab) => tab.style.display !== "none")
+    .map((tab) => tab.dataset.tab);
+}
+
+test("staff does not get the leadership action queue", async () => {
+  const window = await dashboardAs("staff");
+  const tabs = visibleTabs(window);
+  assert.ok(!tabs.includes("critical"),
+    "staff can see Critical issues, an action queue they cannot act on");
+  assert.ok(tabs.includes("overview"), "staff lost the overview");
+});
+
+test("owner keeps every tab", async () => {
+  const window = await dashboardAs("owner");
+  const tabs = visibleTabs(window);
+  for (const expected of ["overview", "critical", "feed", "recognition", "trends"]) {
+    assert.ok(tabs.includes(expected), `owner is missing ${expected}`);
+  }
+});
+
+test("staff and owner do not see the same interface", async () => {
+  const staff = visibleTabs(await dashboardAs("staff"));
+  const owner = visibleTabs(await dashboardAs("owner"));
+  assert.notDeepEqual(staff, owner, "staff and owner are shown an identical dashboard");
+  assert.ok(staff.length < owner.length, "staff sees as much as an owner");
+});
+
+test("staff gets the calm band, not the executive briefing", async () => {
+  const window = await dashboardAs("staff");
+  const host = window.document.getElementById("execSummary");
+  assert.ok(host.querySelector(".staff-band"), "staff did not get the staff band");
+  assert.equal(host.querySelector(".exec"), null,
+    "staff was shown the leadership briefing");
+});
+
+test("owner gets the executive briefing", async () => {
+  const window = await dashboardAs("owner");
+  const host = window.document.getElementById("execSummary");
+  assert.ok(host.querySelector(".exec"), "owner lost the executive briefing");
+});
+
+test("analyst, who cannot read report text, loses the feed", async () => {
+  const window = await dashboardAs("analyst");
+  const tabs = visibleTabs(window);
+  assert.ok(!tabs.includes("feed"), "analyst can open a feed of text they cannot read");
+  assert.ok(!tabs.includes("critical"));
+});
+
 /* ---------------- escaping ---------------- */
 
 test("index.html: complaint text is escaped, not injected", async () => {

@@ -1,7 +1,5 @@
 const crypto = require("crypto");
-const fs = require("fs/promises");
-const path = require("path");
-const config = require("../config");
+const db = require("./db");
 
 /**
  * Appreciation — the positive counterpart to a complaint.
@@ -29,49 +27,64 @@ const CATEGORIES = [
 
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
 
-let mutationChain = Promise.resolve();
-function withLock(operation) {
-  const result = mutationChain.then(operation, operation);
-  mutationChain = result.then(() => undefined, () => undefined);
-  return result;
+function rowToAppreciation(row) {
+  if (!row) { return null; }
+  const value = db.toCamel(row);
+  return {
+    id: value.id,
+    recipientName: value.recipientName,
+    recipientTeam: value.recipientTeam,
+    category: value.category,
+    messageText: value.messageText,
+    fromTeam: value.fromTeam,
+    nominatorName: value.nominatorName || null,
+    revealed: Boolean(value.revealed),
+    revealedAt: value.revealedAt || null,
+    status: value.status,
+    acknowledgedBy: value.acknowledgedBy || null,
+    acknowledgedAt: value.acknowledgedAt || null,
+    spotlight: Boolean(value.spotlight),
+    spotlightBy: value.spotlightBy || null,
+    spotlightAt: value.spotlightAt || null,
+    accessCodeHash: value.accessCodeHash,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt
+  };
 }
 
-function storePath() {
-  return config.appreciationFilePath;
-}
-
-async function ensureStore() {
-  await fs.mkdir(path.dirname(storePath()), { recursive: true });
-  try {
-    await fs.access(storePath());
-  } catch {
-    await fs.writeFile(storePath(), JSON.stringify({ appreciations: [] }, null, 2));
-  }
-}
-
-async function readStore() {
-  await ensureStore();
-  const content = await fs.readFile(storePath(), "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(content || "{}");
-  } catch (error) {
-    throw new Error(`Appreciation store at ${storePath()} is not valid JSON`);
-  }
-  return { appreciations: Array.isArray(parsed.appreciations) ? parsed.appreciations : [] };
-}
-
-async function writeStore(store) {
-  await ensureStore();
-  const payload = JSON.stringify({ appreciations: store.appreciations || [] }, null, 2);
-  const temp = `${storePath()}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  try {
-    await fs.writeFile(temp, payload, "utf8");
-    await fs.rename(temp, storePath());
-  } catch (error) {
-    await fs.rm(temp, { force: true }).catch(() => {});
-    throw error;
-  }
+function upsert(record) {
+  db.get().prepare(`
+    INSERT INTO appreciations (
+      id, recipient_name, recipient_team, category, message_text, from_team,
+      nominator_name, revealed, revealed_at, status,
+      acknowledged_by, acknowledged_at, spotlight, spotlight_by, spotlight_at,
+      access_code_hash, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET
+      recipient_name = excluded.recipient_name,
+      recipient_team = excluded.recipient_team,
+      category = excluded.category,
+      message_text = excluded.message_text,
+      from_team = excluded.from_team,
+      nominator_name = excluded.nominator_name,
+      revealed = excluded.revealed,
+      revealed_at = excluded.revealed_at,
+      status = excluded.status,
+      acknowledged_by = excluded.acknowledged_by,
+      acknowledged_at = excluded.acknowledged_at,
+      spotlight = excluded.spotlight,
+      spotlight_by = excluded.spotlight_by,
+      spotlight_at = excluded.spotlight_at,
+      updated_at = excluded.updated_at
+  `).run(
+    record.id, record.recipientName, record.recipientTeam, record.category,
+    record.messageText, record.fromTeam,
+    record.nominatorName || null, record.revealed ? 1 : 0, record.revealedAt || null,
+    record.status, record.acknowledgedBy || null, record.acknowledgedAt || null,
+    record.spotlight ? 1 : 0, record.spotlightBy || null, record.spotlightAt || null,
+    record.accessCodeHash, record.createdAt, record.updatedAt
+  );
+  return record;
 }
 
 function createId() {
@@ -138,13 +151,11 @@ async function createAppreciation(input) {
     category: CATEGORY_IDS.has(input.category) ? input.category : "teamwork",
     messageText: String(input.messageText || "").trim(),
     fromTeam: String(input.fromTeam || "").trim().slice(0, 80) || "Unspecified",
-
     // Anonymous by default. The nominator may attach their name later through
     // the reveal flow, but never automatically.
     nominatorName: null,
     revealed: false,
     revealedAt: null,
-
     status: "new",
     acknowledgedBy: null,
     acknowledgedAt: null,
@@ -154,41 +165,36 @@ async function createAppreciation(input) {
     accessCodeHash: hashCode(accessCode)
   };
 
-  return withLock(async () => {
-    const store = await readStore();
-    store.appreciations.unshift(record);
-    await writeStore(store);
-    return { appreciation: record, accessCode };
-  });
+  upsert(record);
+  return { appreciation: record, accessCode };
 }
 
 async function listAppreciations(query) {
   const q = query || {};
-  const store = await readStore();
-  return store.appreciations.filter((a) => {
-    if (q.category && a.category !== q.category) { return false; }
-    if (q.status && a.status !== q.status) { return false; }
-    if (q.team && a.recipientTeam !== q.team) { return false; }
-    if (q.spotlight === "true" && !a.spotlight) { return false; }
-    return true;
-  });
+  const where = [];
+  const params = [];
+
+  if (q.category) { where.push("category = ?"); params.push(q.category); }
+  if (q.status) { where.push("status = ?"); params.push(q.status); }
+  if (q.team) { where.push("recipient_team = ?"); params.push(q.team); }
+  if (q.spotlight === "true") { where.push("spotlight = 1"); }
+
+  const sql = "SELECT * FROM appreciations" +
+    (where.length ? " WHERE " + where.join(" AND ") : "") +
+    " ORDER BY created_at DESC";
+
+  return db.get().prepare(sql).all(...params).map(rowToAppreciation);
 }
 
 async function getById(id) {
-  const store = await readStore();
-  return store.appreciations.find((a) => a.id === String(id).trim()) || null;
+  const row = db.get().prepare("SELECT * FROM appreciations WHERE id = ?").get(String(id || "").trim());
+  return rowToAppreciation(row);
 }
 
 async function updateAppreciation(id, updater) {
-  return withLock(async () => {
-    const store = await readStore();
-    const index = store.appreciations.findIndex((a) => a.id === id);
-    if (index === -1) { return null; }
-    const next = updater(store.appreciations[index]);
-    store.appreciations[index] = next;
-    await writeStore(store);
-    return next;
-  });
+  const existing = await getById(id);
+  if (!existing) { return null; }
+  return upsert(updater(existing));
 }
 
 /**

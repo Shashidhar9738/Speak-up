@@ -1,7 +1,6 @@
 const crypto = require("crypto");
-const fs = require("fs/promises");
-const path = require("path");
 const config = require("../config");
+const db = require("./db");
 const { hashPassword, verifyPassword } = require("./passwordService");
 
 /**
@@ -34,47 +33,60 @@ const DEFAULT_ROLE = config.defaultRole || ROLES.STAFF;
 
 // Mutations are serialized for the same reason as the submission store: a
 // read-modify-write with an await in the middle loses records under load.
-let mutationChain = Promise.resolve();
-
-function withLock(operation) {
-  const result = mutationChain.then(operation, operation);
-  mutationChain = result.then(() => undefined, () => undefined);
-  return result;
+function rowToUser(row) {
+  if (!row) { return null; }
+  const value = db.toCamel(row);
+  return {
+    email: value.email,
+    fullName: value.fullName || "",
+    reason: value.reason || "",
+    role: value.role,
+    departments: db.json(value.departments, []),
+    status: value.status,
+    source: value.source,
+    passwordHash: value.passwordHash || null,
+    passwordSetAt: value.passwordSetAt || undefined,
+    emailVerifiedAt: value.emailVerifiedAt || undefined,
+    approvedBy: value.approvedBy || undefined,
+    approvedAt: value.approvedAt || undefined,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt
+  };
 }
 
-async function ensureStore() {
-  await fs.mkdir(path.dirname(config.userFilePath), { recursive: true });
-  try {
-    await fs.access(config.userFilePath);
-  } catch {
-    await fs.writeFile(config.userFilePath, JSON.stringify({ users: [] }, null, 2));
-  }
+function upsertUser(user) {
+  db.get().prepare(`
+    INSERT INTO users (
+      email, full_name, reason, role, departments, status, source,
+      password_hash, password_set_at, email_verified_at,
+      approved_by, approved_at, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(email) DO UPDATE SET
+      full_name = excluded.full_name,
+      reason = excluded.reason,
+      role = excluded.role,
+      departments = excluded.departments,
+      status = excluded.status,
+      source = excluded.source,
+      password_hash = excluded.password_hash,
+      password_set_at = excluded.password_set_at,
+      email_verified_at = excluded.email_verified_at,
+      approved_by = excluded.approved_by,
+      approved_at = excluded.approved_at,
+      updated_at = excluded.updated_at
+  `).run(
+    user.email, user.fullName || null, user.reason || null,
+    user.role, JSON.stringify(user.departments || []), user.status, user.source || null,
+    user.passwordHash || null, user.passwordSetAt || null, user.emailVerifiedAt || null,
+    user.approvedBy || null, user.approvedAt || null,
+    user.createdAt, user.updatedAt
+  );
+  return user;
 }
 
-async function readStore() {
-  await ensureStore();
-  const content = await fs.readFile(config.userFilePath, "utf8");
-  let parsed;
-  try {
-    parsed = JSON.parse(content || "{}");
-  } catch (error) {
-    throw new Error(`User store at ${config.userFilePath} is not valid JSON`);
-  }
-  return { users: Array.isArray(parsed.users) ? parsed.users : [] };
-}
-
-async function writeStore(store) {
-  await ensureStore();
-  const payload = JSON.stringify({ users: store.users || [] }, null, 2);
-  const tempPath = `${config.userFilePath}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-  try {
-    await fs.writeFile(tempPath, payload, "utf8");
-    await fs.rename(tempPath, config.userFilePath);
-  } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
-}
+// Codes live for 15 minutes and are useless afterwards, so they stay in memory
+// rather than becoming rows that need expiring.
+const pendingCodes = new Map();
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -122,9 +134,8 @@ function publicUser(user) {
 }
 
 async function findUser(email) {
-  const store = await readStore();
-  const target = normalizeEmail(email);
-  return store.users.find((user) => user.email === target) || null;
+  const row = db.get().prepare("SELECT * FROM users WHERE email = ?").get(normalizeEmail(email));
+  return rowToUser(row);
 }
 
 /**
@@ -133,178 +144,130 @@ async function findUser(email) {
  */
 async function ensureBootstrapOwner(email) {
   const target = normalizeEmail(email);
-  if (!isBootstrapOwner(target)) {
-    return null;
+  if (!isBootstrapOwner(target)) { return null; }
+
+  const existing = await findUser(target);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    // Keep bootstrap accounts usable even if revoked by mistake.
+    if (existing.status !== STATUS.APPROVED || existing.role !== ROLES.OWNER) {
+      existing.status = STATUS.APPROVED;
+      existing.role = ROLES.OWNER;
+      existing.updatedAt = now;
+      upsertUser(existing);
+    }
+    return existing;
   }
 
-  return withLock(async () => {
-    const store = await readStore();
-    const existing = store.users.find((user) => user.email === target);
-    if (existing) {
-      // Keep bootstrap accounts usable even if they were revoked by mistake.
-      if (existing.status !== STATUS.APPROVED || existing.role !== ROLES.OWNER) {
-        existing.status = STATUS.APPROVED;
-        existing.role = ROLES.OWNER;
-        existing.updatedAt = new Date().toISOString();
-        await writeStore(store);
-      }
-      return existing;
-    }
-
-    const owner = {
-      email: target,
-      role: ROLES.OWNER,
-      status: STATUS.APPROVED,
-      source: "bootstrap",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      approvedBy: "config",
-      approvedAt: new Date().toISOString()
-    };
-    store.users.push(owner);
-    await writeStore(store);
-    return owner;
+  return upsertUser({
+    email: target, fullName: "", reason: "", role: ROLES.OWNER, departments: [],
+    status: STATUS.APPROVED, source: "bootstrap", passwordHash: null,
+    approvedBy: "config", approvedAt: now, createdAt: now, updatedAt: now
   });
 }
 
 async function registerUser({ email, fullName, reason, passwordHash }) {
   const target = normalizeEmail(email);
+  const existing = await findUser(target);
+  const code = createVerificationCode();
+  const now = new Date().toISOString();
 
-  return withLock(async () => {
-    const store = await readStore();
-    const existing = store.users.find((user) => user.email === target);
-    const code = createVerificationCode();
-    const now = new Date().toISOString();
-    const expiresAt = Date.now() + config.verificationTtlMinutes * 60 * 1000;
-
-    if (existing) {
-      // Re-registering an approved or rejected account must not reset it —
-      // that would let anyone bounce a rejected account back into the queue.
-      if (existing.status === STATUS.APPROVED) {
-        return { user: existing, code: null, alreadyApproved: true };
-      }
-      if (existing.status === STATUS.REJECTED || existing.status === STATUS.REVOKED) {
-        return { user: existing, code: null, blocked: true };
-      }
-
-      existing.verificationCodeHash = hashCode(code);
-      existing.verificationExpiresAt = expiresAt;
-      existing.verificationAttempts = 0;
-      existing.status = STATUS.PENDING_VERIFICATION;
-      existing.updatedAt = now;
-      if (fullName) { existing.fullName = fullName; }
-      if (reason) { existing.reason = reason; }
-      if (passwordHash) { existing.passwordHash = passwordHash; }
-      await writeStore(store);
-      return { user: existing, code };
+  if (existing) {
+    // Re-registering an approved or rejected account must not reset it — that
+    // would let anyone bounce a rejected account back into the queue.
+    if (existing.status === STATUS.APPROVED) {
+      return { user: existing, code: null, alreadyApproved: true };
     }
+    if (existing.status === STATUS.REJECTED || existing.status === STATUS.REVOKED) {
+      return { user: existing, code: null, blocked: true };
+    }
+    existing.status = STATUS.PENDING_VERIFICATION;
+    existing.updatedAt = now;
+    if (fullName) { existing.fullName = fullName; }
+    if (reason) { existing.reason = reason; }
+    if (passwordHash) { existing.passwordHash = passwordHash; }
+    upsertUser(existing);
+    pendingCodes.set(target, { hash: hashCode(code), expiresAt: Date.now() + config.verificationTtlMinutes * 60000, attempts: 0 });
+    return { user: existing, code };
+  }
 
-    const user = {
-      email: target,
-      fullName: fullName || "",
-      reason: reason || "",
-      role: DEFAULT_ROLE,
-      departments: [],
-      passwordHash: passwordHash || null,
-      status: STATUS.PENDING_VERIFICATION,
-      source: "registration",
-      createdAt: now,
-      updatedAt: now,
-      verificationCodeHash: hashCode(code),
-      verificationExpiresAt: expiresAt,
-      verificationAttempts: 0
-    };
-    store.users.push(user);
-    await writeStore(store);
-    return { user, code };
+  const user = upsertUser({
+    email: target, fullName: fullName || "", reason: reason || "",
+    role: DEFAULT_ROLE, departments: [],
+    status: config.requireVerification ? STATUS.PENDING_VERIFICATION : STATUS.APPROVED,
+    source: "registration", passwordHash: passwordHash || null,
+    emailVerifiedAt: config.requireVerification ? null : now,
+    approvedBy: config.requireVerification ? null : "auto (verified corporate domain)",
+    approvedAt: config.requireVerification ? null : now,
+    createdAt: now, updatedAt: now
   });
+
+  if (config.requireVerification) {
+    pendingCodes.set(target, { hash: hashCode(code), expiresAt: Date.now() + config.verificationTtlMinutes * 60000, attempts: 0 });
+    return { user, code };
+  }
+  // Verification is off: the account is live immediately and no code is issued.
+  return { user, code: null, autoApproved: true };
 }
 
 async function verifyUser({ email, code }) {
   const target = normalizeEmail(email);
+  const user = await findUser(target);
+  const pending = pendingCodes.get(target);
 
-  return withLock(async () => {
-    const store = await readStore();
-    const user = store.users.find((item) => item.email === target);
+  if (!user || !pending) {
+    return { error: "No pending registration for that address" };
+  }
+  if (Date.now() > pending.expiresAt) {
+    pendingCodes.delete(target);
+    return { error: "Verification code expired. Please register again." };
+  }
+  // Cap attempts so a 6-digit code cannot simply be brute forced.
+  if (pending.attempts >= 5) {
+    pendingCodes.delete(target);
+    return { error: "Too many incorrect attempts. Please register again." };
+  }
+  if (!codesMatch(code, pending.hash)) {
+    pending.attempts += 1;
+    return { error: "Incorrect verification code" };
+  }
 
-    if (!user || user.status !== STATUS.PENDING_VERIFICATION) {
-      return { error: "No pending registration for that address" };
-    }
-
-    if (!user.verificationExpiresAt || Date.now() > user.verificationExpiresAt) {
-      return { error: "Verification code expired. Please register again." };
-    }
-
-    // Cap attempts so a 6-digit code cannot simply be brute forced.
-    if ((user.verificationAttempts || 0) >= 5) {
-      return { error: "Too many incorrect attempts. Please register again." };
-    }
-
-    if (!codesMatch(code, user.verificationCodeHash)) {
-      user.verificationAttempts = (user.verificationAttempts || 0) + 1;
-      user.updatedAt = new Date().toISOString();
-      await writeStore(store);
-      return { error: "Incorrect verification code" };
-    }
-
-    // With autoApprove on, a verified corporate address is enough — no owner
-    // sign-off. Turn SPEAKUP_AUTO_APPROVE=false to restore the queue.
-    user.status = config.autoApprove ? STATUS.APPROVED : STATUS.PENDING_APPROVAL;
-    user.emailVerifiedAt = new Date().toISOString();
-    if (config.autoApprove) {
-      user.approvedBy = "auto (verified corporate domain)";
-      user.approvedAt = user.emailVerifiedAt;
-    }
-    user.updatedAt = user.emailVerifiedAt;
-    delete user.verificationCodeHash;
-    delete user.verificationExpiresAt;
-    delete user.verificationAttempts;
-    await writeStore(store);
-    return { user };
-  });
+  pendingCodes.delete(target);
+  const now = new Date().toISOString();
+  user.status = config.autoApprove ? STATUS.APPROVED : STATUS.PENDING_APPROVAL;
+  user.emailVerifiedAt = now;
+  user.updatedAt = now;
+  if (config.autoApprove) {
+    user.approvedBy = "auto (verified corporate domain)";
+    user.approvedAt = now;
+  }
+  upsertUser(user);
+  return { user };
 }
 
 async function setUserStatus({ email, status, actorEmail, role, departments }) {
-  const target = normalizeEmail(email);
+  const user = await findUser(email);
+  if (!user) { return null; }
 
-  return withLock(async () => {
-    const store = await readStore();
-    const user = store.users.find((item) => item.email === target);
-    if (!user) {
-      return null;
-    }
-
-    user.status = status;
-    user.updatedAt = new Date().toISOString();
-    if (role) {
-      user.role = role;
-    }
-    if (departments) {
-      user.departments = departments;
-    }
-    if (status === STATUS.APPROVED) {
-      user.approvedBy = actorEmail;
-      user.approvedAt = user.updatedAt;
-    }
-    await writeStore(store);
-    return user;
-  });
+  user.status = status;
+  user.updatedAt = new Date().toISOString();
+  if (role) { user.role = role; }
+  if (departments) { user.departments = departments; }
+  if (status === STATUS.APPROVED) {
+    user.approvedBy = actorEmail;
+    user.approvedAt = user.updatedAt;
+  }
+  return upsertUser(user);
 }
 
 async function setPassword(email, plainPassword) {
-  const target = normalizeEmail(email);
-  const passwordHash = await hashPassword(plainPassword);
-
-  return withLock(async () => {
-    const store = await readStore();
-    const user = store.users.find((item) => item.email === target);
-    if (!user) { return null; }
-    user.passwordHash = passwordHash;
-    user.passwordSetAt = new Date().toISOString();
-    user.updatedAt = user.passwordSetAt;
-    await writeStore(store);
-    return user;
-  });
+  const user = await findUser(email);
+  if (!user) { return null; }
+  user.passwordHash = await hashPassword(plainPassword);
+  user.passwordSetAt = new Date().toISOString();
+  user.updatedAt = user.passwordSetAt;
+  return upsertUser(user);
 }
 
 /**
@@ -321,10 +284,7 @@ async function checkPassword(email, plainPassword) {
 }
 
 async function listUsers() {
-  const store = await readStore();
-  return store.users
-    .slice()
-    .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt));
+  return db.get().prepare("SELECT * FROM users ORDER BY created_at DESC").all().map(rowToUser);
 }
 
 /**

@@ -1,103 +1,200 @@
 const crypto = require("crypto");
-const fs = require("fs/promises");
-const path = require("path");
-const config = require("../config");
+const db = require("./db");
 
-// Every mutation is a read-modify-write against a single JSON file. Without
-// serialization the await between read and write lets concurrent requests read
-// the same snapshot and the last writer wins, silently dropping every record
-// written in between. This promise chain makes mutations run one at a time.
-let mutationChain = Promise.resolve();
+/**
+ * Submission storage, backed by SQLite.
+ *
+ * The JSON version this replaces re-read and re-wrote the whole file for every
+ * change, and needed a hand-written promise chain so concurrent submissions did
+ * not overwrite each other. SQLite in WAL mode gives both properties for free.
+ *
+ * Messages live in their own table but are always read with their submission,
+ * so the shape the rest of the app sees is unchanged.
+ */
 
-function withLock(operation) {
-  const result = mutationChain.then(operation, operation);
-  // Keep the chain alive even when an operation rejects.
-  mutationChain = result.then(() => undefined, () => undefined);
-  return result;
-}
-
-async function ensureStore() {
-  const directoryPath = path.dirname(config.dataFilePath);
-  await fs.mkdir(directoryPath, { recursive: true });
-
-  try {
-    await fs.access(config.dataFilePath);
-  } catch {
-    await fs.writeFile(config.dataFilePath, JSON.stringify({ submissions: [] }, null, 2));
-  }
-}
-
-async function readStore() {
-  await ensureStore();
-  const fileContent = await fs.readFile(config.dataFilePath, "utf8");
-
-  let parsed;
-  try {
-    parsed = JSON.parse(fileContent || "{}");
-  } catch (error) {
-    throw new Error(`Submission store at ${config.dataFilePath} is not valid JSON`);
-  }
+function rowToSubmission(row, messages) {
+  if (!row) { return null; }
+  const value = db.toCamel(row);
 
   return {
-    submissions: Array.isArray(parsed.submissions) ? parsed.submissions : []
+    id: value.id,
+    messageText: value.messageText,
+    summary: value.summary,
+    category: value.category,
+    keywords: db.json(value.keywords, []),
+    sentiment: value.sentiment,
+    priority: value.priority,
+    priorityScore: value.priorityScore,
+    priorityLabel: value.priorityLabel,
+    priorityColour: value.priorityColour,
+    priorityReason: value.priorityReason,
+    priorityTerms: db.json(value.priorityTerms, []),
+    sla: value.sla,
+    status: value.status,
+    statusNote: value.statusNote || undefined,
+    department: value.department,
+    region: value.region,
+    channel: value.channel,
+    quarantined: Boolean(value.quarantined),
+    flags: {
+      spam: Boolean(value.flagSpam),
+      urgent: Boolean(value.flagUrgent),
+      sensitive: Boolean(value.flagSensitive)
+    },
+    metadata: { browserLocale: value.browserLocale || "unknown" },
+    accessCodeHash: value.accessCodeHash,
+    editedAt: value.editedAt || undefined,
+    editCount: value.editCount || 0,
+    messages: messages || [],
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt
   };
 }
 
-// Write to a sibling temp file then rename. Rename is atomic on the same
-// filesystem, so a crash mid-write cannot leave a truncated store behind.
-async function writeStore(store) {
-  await ensureStore();
-  const payload = JSON.stringify({ submissions: store.submissions || [] }, null, 2);
-  const tempPath = `${config.dataFilePath}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-
-  try {
-    await fs.writeFile(tempPath, payload, "utf8");
-    await fs.rename(tempPath, config.dataFilePath);
-  } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
+function messagesFor(id) {
+  return db.get()
+    .prepare("SELECT * FROM messages WHERE submission_id = ? ORDER BY created_at ASC")
+    .all(id)
+    .map((row) => {
+      const value = db.toCamel(row);
+      return {
+        id: value.id,
+        authorType: value.authorType,
+        messageText: value.messageText,
+        createdAt: value.createdAt
+      };
+    });
 }
 
 async function listSubmissions() {
-  const store = await readStore();
-  return store.submissions;
+  const rows = db.get().prepare("SELECT * FROM submissions ORDER BY created_at DESC").all();
+  // One query for every thread rather than one per row.
+  const threads = {};
+  db.get().prepare("SELECT * FROM messages ORDER BY created_at ASC").all().forEach((row) => {
+    const value = db.toCamel(row);
+    (threads[value.submissionId] = threads[value.submissionId] || []).push({
+      id: value.id,
+      authorType: value.authorType,
+      messageText: value.messageText,
+      createdAt: value.createdAt
+    });
+  });
+  return rows.map((row) => rowToSubmission(row, threads[row.id] || []));
+}
+
+async function getSubmissionById(id) {
+  const row = db.get().prepare("SELECT * FROM submissions WHERE id = ?").get(String(id || "").trim());
+  return row ? rowToSubmission(row, messagesFor(row.id)) : null;
 }
 
 async function createSubmission(submission) {
-  return withLock(async () => {
-    const store = await readStore();
-    store.submissions.unshift(submission);
-    await writeStore(store);
-    return submission;
-  });
+  db.get().prepare(`
+    INSERT INTO submissions (
+      id, message_text, summary, category, keywords, sentiment,
+      priority, priority_score, priority_label, priority_colour,
+      priority_reason, priority_terms, sla, status, status_note,
+      department, region, channel, quarantined,
+      flag_spam, flag_urgent, flag_sensitive, browser_locale,
+      access_code_hash, edited_at, edit_count, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    submission.id, submission.messageText, submission.summary, submission.category,
+    JSON.stringify(submission.keywords || []), submission.sentiment,
+    submission.priority, submission.priorityScore || 0,
+    submission.priorityLabel || null, submission.priorityColour || null,
+    submission.priorityReason || null, JSON.stringify(submission.priorityTerms || []),
+    submission.sla || null, submission.status || "open", submission.statusNote || null,
+    submission.department, submission.region, submission.channel,
+    submission.quarantined ? 1 : 0,
+    submission.flags?.spam ? 1 : 0, submission.flags?.urgent ? 1 : 0, submission.flags?.sensitive ? 1 : 0,
+    submission.metadata?.browserLocale || "unknown",
+    submission.accessCodeHash,
+    submission.editedAt || null, submission.editCount || 0,
+    submission.createdAt, submission.updatedAt
+  );
+
+  (submission.messages || []).forEach((message) => appendMessageRow(submission.id, message));
+  return getSubmissionById(submission.id);
 }
 
-async function updateSubmission(submissionId, updater) {
-  return withLock(async () => {
-    const store = await readStore();
-    const index = store.submissions.findIndex((item) => item.id === submissionId);
+function appendMessageRow(submissionId, message) {
+  db.get().prepare(
+    "INSERT INTO messages (id, submission_id, author_type, message_text, created_at) VALUES (?,?,?,?,?)"
+  ).run(
+    message.id || `msg-${crypto.randomUUID()}`,
+    submissionId,
+    message.authorType,
+    message.messageText,
+    message.createdAt || new Date().toISOString()
+  );
+}
 
-    if (index === -1) {
-      return null;
+/**
+ * Kept updater-shaped so callers written against the JSON store still work.
+ * The read and the write run inside one transaction, so a concurrent update
+ * cannot land between them.
+ */
+async function updateSubmission(submissionId, updater) {
+  const id = String(submissionId || "").trim();
+  const database = db.get();
+
+  const existing = await getSubmissionById(id);
+  if (!existing) { return null; }
+
+  const next = updater(existing);
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.prepare(`
+      UPDATE submissions SET
+        message_text = ?, summary = ?, category = ?, keywords = ?, sentiment = ?,
+        priority = ?, priority_score = ?, priority_label = ?, priority_colour = ?,
+        priority_reason = ?, priority_terms = ?, sla = ?,
+        status = ?, status_note = ?, department = ?, region = ?, channel = ?,
+        quarantined = ?, flag_spam = ?, flag_urgent = ?, flag_sensitive = ?,
+        edited_at = ?, edit_count = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      next.messageText, next.summary, next.category,
+      JSON.stringify(next.keywords || []), next.sentiment,
+      next.priority, next.priorityScore || 0, next.priorityLabel || null,
+      next.priorityColour || null, next.priorityReason || null,
+      JSON.stringify(next.priorityTerms || []), next.sla || null,
+      next.status, next.statusNote || null,
+      next.department, next.region, next.channel,
+      next.quarantined ? 1 : 0,
+      next.flags?.spam ? 1 : 0, next.flags?.urgent ? 1 : 0, next.flags?.sensitive ? 1 : 0,
+      next.editedAt || null, next.editCount || 0,
+      next.updatedAt || new Date().toISOString(),
+      id
+    );
+
+    // Messages are replaced wholesale: callers hand back the full array, and
+    // diffing it would be more code for no benefit at this size.
+    const before = existing.messages || [];
+    const after = next.messages || [];
+    if (after.length !== before.length) {
+      database.prepare("DELETE FROM messages WHERE submission_id = ?").run(id);
+      after.forEach((message) => appendMessageRow(id, message));
     }
 
-    const currentValue = store.submissions[index];
-    const nextValue = updater(currentValue);
-    store.submissions[index] = nextValue;
-    await writeStore(store);
-    return nextValue;
-  });
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+
+  return getSubmissionById(id);
 }
 
-async function getSubmissionById(submissionId) {
-  const store = await readStore();
-  return store.submissions.find((item) => item.id === submissionId) || null;
+function countSubmissions() {
+  return db.get().prepare("SELECT COUNT(*) AS n FROM submissions").get().n;
 }
 
 module.exports = {
   listSubmissions,
   createSubmission,
   updateSubmission,
-  getSubmissionById
+  getSubmissionById,
+  countSubmissions
 };
