@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakUp — Leadership sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+:root {
+  --card: #ffffff;
+  --text: #111827;
+  --text-sec: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #4f46e5;
+  --accent-light: #eef2ff;
+  --warning-light: #fffbeb;
+  --danger: #dc2626;
+  --danger-light: #fef2f2;
+  --border: #e5e7eb;
+  --font: 'Inter', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font); color: var(--text); background: #1a1b2e;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.wrap { width: 100%; max-width: 400px; }
+.brand { text-align: center; margin-bottom: 26px; }
+.brand-name { font-size: 26px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+.brand-sub { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+
+.card { background: var(--card); border-radius: 14px; padding: 30px; box-shadow: 0 18px 40px rgba(0,0,0,0.3); }
+h1 { font-size: 18px; margin-bottom: 6px; }
+.sub { font-size: 13px; color: var(--text-sec); margin-bottom: 22px; line-height: 1.55; }
+
+label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+input[type=email] {
+  width: 100%; font-family: var(--font); font-size: 14px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+input[type=email]:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.12);
+}
+
+button {
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer;
+  border: none; border-radius: 8px; padding: 13px 20px; width: 100%; margin-top: 18px;
+  background: var(--accent); color: #fff; transition: background 150ms, opacity 150ms;
+}
+button:hover:not(:disabled) { background: #4338ca; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.alert { border-radius: 8px; padding: 11px 13px; font-size: 13px; margin-bottom: 18px; display: none; line-height: 1.5; }
+.alert.show { display: block; }
+.alert.error { background: var(--danger-light); color: #991b1b; }
+.alert.notice { background: var(--warning-light); color: #92400e; }
+
+.note { display: flex; gap: 9px; align-items: flex-start; background: var(--accent-light); border-radius: 8px; padding: 11px 13px; margin-top: 20px; }
+.note i { color: var(--accent); font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.note-text { font-size: 11.5px; color: #3730a3; line-height: 1.55; }
+
+.footer-note { text-align: center; font-size: 12px; color: #94a3b8; margin-top: 20px; }
+.footer-note a { color: #cbd5e1; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="brand">
+    <div class="brand-name">SpeakUp</div>
+    <div class="brand-sub">Leadership Dashboard</div>
+  </div>
+
+  <div class="card">
+    <h1>Sign in</h1>
+    <div class="sub">Access is limited to allowlisted leadership and HR accounts.</div>
+
+    <div class="alert notice" id="notice"></div>
+    <div class="alert error" id="error"></div>
+
+    <form id="form">
+      <label for="email">Work email</label>
+      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@company.com" autofocus>
+      <button type="submit" id="submitBtn">Continue</button>
+    </form>
+
+    <div class="note">
+      <i class="ti ti-eye-off"></i>
+      <div class="note-text">
+        The dashboard shows aggregated complaints only. Reporter identities are never
+        collected, so they cannot be revealed here.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    No access yet? <a href="register.html">Request it with your Comviva email</a><br>
+    Not leadership? <a href="submit.html">Share something anonymously</a>
+  </div>
+</div>
+
+<script src="assets/api.js"></script>
+<script>
+var form = document.getElementById('form');
+var emailInput = document.getElementById('email');
+var errorBox = document.getElementById('error');
+var noticeBox = document.getElementById('notice');
+var submitBtn = document.getElementById('submitBtn');
+
+if (new URLSearchParams(location.search).has('expired')) {
+  noticeBox.textContent = 'Your session expired. Please sign in again.';
+  noticeBox.classList.add('show');
+}
+
+// Already holding a valid token? Skip the form. Validated against the server
+// rather than trusted blindly, since the token may have been revoked.
+(async function () {
+  if (!SpeakUpApi.isSignedIn()) { return; }
+  try {
+    await SpeakUpApi.me();
+    location.href = 'index.html';
+  } catch (error) {
+    SpeakUpApi.clearSession();
+  }
+})();
+
+form.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  errorBox.classList.remove('show');
+  noticeBox.classList.remove('show');
+
+  var email = emailInput.value.trim();
+  if (!email) { return; }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Signing in…';
+
+  try {
+    await SpeakUpApi.login(email);
+    location.href = 'index.html';
+  } catch (error) {
+    errorBox.textContent = error.status === 403
+      ? 'That email is not on the leadership allowlist.'
+      : (error.message || 'Sign in failed. Please try again.');
+    errorBox.classList.add('show');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Continue';
+  }
+});
+</script>
+</body>
+</html>

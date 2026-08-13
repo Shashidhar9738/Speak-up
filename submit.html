@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakUp — Share something anonymously</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --text: #111827;
+  --text-sec: #6b7280;
+  --text-muted: #9ca3af;
+  --accent: #4f46e5;
+  --accent-light: #eef2ff;
+  --success: #059669;
+  --success-light: #ecfdf5;
+  --danger: #dc2626;
+  --danger-light: #fef2f2;
+  --border: #e5e7eb;
+  --radius: 12px;
+  --font: 'Inter', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font); background: var(--bg); color: var(--text);
+  min-height: 100vh; display: flex;
+}
+
+/* SIDEBAR — employee-facing links only; this page is public. */
+.sidebar {
+  width: 232px; background: #12131f; color: #8b93a7; flex-shrink: 0;
+  padding: 22px 14px; display: flex; flex-direction: column;
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+}
+.sidebar-brand {
+  font-size: 19px; font-weight: 700; color: #fff; padding: 0 10px;
+  letter-spacing: -.3px; display: flex; align-items: center; gap: 9px;
+}
+.brand-mark {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #7c6df2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: #fff; flex-shrink: 0;
+}
+.sidebar-sub { font-size: 11px; color: #5d6579; margin: 3px 0 26px; padding: 0 10px 0 45px; }
+.nav-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .9px;
+  color: #4a5164; padding: 0 10px; margin-bottom: 6px; font-weight: 600;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+  border-radius: 10px; cursor: pointer; transition: background 140ms, color 140ms;
+  font-size: 13px; color: #8b93a7; text-decoration: none; position: relative;
+}
+.nav-item:hover { background: rgba(255,255,255,.05); color: #d7dbe4; }
+.nav-item.active { background: #1c1e2e; color: #fff; font-weight: 500; }
+.nav-item.active::before {
+  content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0; background: #7c6df2;
+}
+.nav-item i { font-size: 17px; width: 19px; text-align: center; }
+.sidebar-note {
+  margin-top: auto; padding: 12px 10px; border-top: 1px solid rgba(255,255,255,.07);
+  font-size: 11px; color: #5d6579; line-height: 1.55;
+}
+
+.page { margin-left: 232px; flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px 24px; min-width: 0; }
+.wrap { width: 100%; max-width: 620px; }
+
+/* Back link for narrow screens, where the sidebar is hidden */
+.mobile-nav { display: none; margin-bottom: 16px; }
+.mobile-nav a { font-size: 13px; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+
+.brand { text-align: center; margin-bottom: 24px; }
+.brand-name { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+.brand-sub { font-size: 13px; color: var(--text-sec); margin-top: 4px; }
+
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.privacy {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--accent-light); border-radius: 10px; padding: 12px 14px; margin-bottom: 22px;
+}
+.privacy i { color: var(--accent); font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.privacy-text { font-size: 12px; color: #3730a3; line-height: 1.55; }
+
+label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.hint { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+
+textarea, select, input[type=text] {
+  width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  background: #fff; transition: border-color 150ms, box-shadow 150ms;
+}
+textarea { min-height: 150px; resize: vertical; line-height: 1.6; }
+textarea:focus, select:focus, input[type=text]:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.12);
+}
+.counter { text-align: right; font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.counter.warn { color: var(--danger); }
+
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+.field { margin-top: 18px; }
+
+button {
+  font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer;
+  border: none; border-radius: 8px; padding: 13px 20px; transition: opacity 150ms, background 150ms;
+}
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; width: 100%; margin-top: 24px; }
+.btn-primary:hover:not(:disabled) { background: #4338ca; }
+.btn-ghost { background: transparent; color: var(--accent); padding: 8px 0; }
+
+.alert { border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 18px; display: none; }
+.alert.show { display: block; }
+.alert.error { background: var(--danger-light); color: #991b1b; }
+
+.footer-note { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 20px; line-height: 1.6; }
+.footer-note a { color: var(--text-sec); }
+
+/* CONFIRMATION */
+.confirm { display: none; text-align: center; }
+.confirm.show { display: block; }
+.confirm-icon {
+  width: 56px; height: 56px; border-radius: 50%; background: var(--success-light);
+  color: var(--success); display: flex; align-items: center; justify-content: center;
+  font-size: 30px; margin: 0 auto 16px;
+}
+.confirm h2 { font-size: 20px; margin-bottom: 8px; }
+.confirm p { font-size: 14px; color: var(--text-sec); line-height: 1.6; }
+.receipt {
+  background: #f9fafb; border: 1px dashed var(--border); border-radius: 10px;
+  padding: 16px; margin: 20px 0; text-align: left;
+}
+.receipt-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
+.receipt-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.tag { font-size: 11px; padding: 3px 9px; border-radius: 20px; background: var(--accent-light); color: var(--accent); font-weight: 500; }
+
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .page { margin-left: 0; padding: 24px 18px; }
+  .mobile-nav { display: block; }
+}
+@media (max-width: 520px) {
+  .row { grid-template-columns: 1fr; }
+  .card { padding: 20px; }
+}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-brand"><span class="brand-mark"><i class="ti ti-message-report"></i></span>SpeakUp</div>
+  <div class="sidebar-sub">Anonymous employee voice</div>
+
+  <div>
+    <div class="nav-label">For employees</div>
+    <a class="nav-item active" href="submit.html"><i class="ti ti-pencil-plus"></i> Share something</a>
+    <a class="nav-item" href="track.html"><i class="ti ti-search"></i> Track a report</a>
+  </div>
+
+  <div style="margin-top:22px;">
+    <div class="nav-label">Leadership</div>
+    <a class="nav-item" href="login.html"><i class="ti ti-lock"></i> Sign in</a>
+  </div>
+
+  <div class="sidebar-note">
+    We never record who you are — no account, no email, no IP address.
+  </div>
+</div>
+
+<div class="page">
+<div class="wrap">
+  <div class="mobile-nav">
+    <a href="track.html"><i class="ti ti-arrow-left"></i> Track an existing report</a>
+  </div>
+  <div class="brand">
+    <div class="brand-name">SpeakUp</div>
+    <div class="brand-sub">Say what needs saying. No name, no login, no trace.</div>
+  </div>
+
+  <div class="card">
+
+    <!-- FORM -->
+    <form id="form">
+      <div class="privacy">
+        <i class="ti ti-shield-lock"></i>
+        <div class="privacy-text">
+          We never ask who you are. No account, no email, no IP logging. Department and
+          region are optional and only used to spot patterns across teams.
+        </div>
+      </div>
+
+      <label for="messageText">What would you like leadership to know?</label>
+      <textarea id="messageText" name="messageText" required minlength="10" maxlength="5000"
+        placeholder="Describe what happened. Be as specific as you're comfortable with — details help us act, but never include anything that could identify you if you'd rather stay unidentifiable."></textarea>
+      <div class="counter" id="counter">0 / 5000</div>
+
+      <div class="row">
+        <div>
+          <label for="department">Department <span class="hint">(optional)</span></label>
+          <select id="department" name="department">
+            <option value="">Prefer not to say</option>
+            <option>Engineering</option>
+            <option>Product</option>
+            <option>Sales</option>
+            <option>People &amp; HR</option>
+            <option>Finance</option>
+            <option>Marketing</option>
+            <option>Legal</option>
+            <option>Operations</option>
+            <option>Support</option>
+          </select>
+        </div>
+        <div>
+          <label for="region">Region <span class="hint">(optional)</span></label>
+          <select id="region" name="region">
+            <option value="">Prefer not to say</option>
+            <option>India</option>
+            <option>Europe</option>
+            <option>UK</option>
+            <option>USA</option>
+            <option>APAC</option>
+            <option>Middle East</option>
+            <option>Africa</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary" id="submitBtn">Submit anonymously</button>
+      <div class="alert error" id="error"></div>
+    </form>
+
+    <!-- CONFIRMATION -->
+    <div class="confirm" id="confirm">
+      <div class="confirm-icon"><i class="ti ti-check"></i></div>
+      <h2>Received</h2>
+      <p>Your message is with leadership. Nothing about you was recorded.</p>
+
+      <div class="receipt">
+        <div class="receipt-label">Your reference</div>
+        <div class="receipt-value" id="refId">—</div>
+        <div class="receipt-label" style="margin-top:14px;">Access code — shown once</div>
+        <div class="receipt-value" id="accessCode" style="font-size:17px;font-weight:700;letter-spacing:1px;">—</div>
+        <button class="btn-ghost" id="copyBtn" style="padding:6px 0;font-size:12px;">Copy both</button>
+        <div class="tags" id="tags"></div>
+      </div>
+
+      <p style="font-size:12px;">
+        Save the access code now. It lets you check the status and reply anonymously.
+        We store only a one-way hash of it, so <strong>we cannot recover or reset it</strong> —
+        that is the same reason we cannot identify you.
+      </p>
+
+      <button class="btn-ghost" id="againBtn">Share something else</button>
+      <a class="btn-ghost" href="track.html" style="display:block;text-decoration:none;">Track a previous report</a>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    Nothing here is ever published externally.
+  </div>
+</div>
+</div>
+
+<script src="assets/api.js"></script>
+<script>
+var form = document.getElementById('form');
+var confirmPanel = document.getElementById('confirm');
+var messageText = document.getElementById('messageText');
+var counter = document.getElementById('counter');
+var errorBox = document.getElementById('error');
+var submitBtn = document.getElementById('submitBtn');
+
+var MAX = 5000;
+var MIN = 10;
+
+messageText.addEventListener('input', function () {
+  var length = messageText.value.length;
+  counter.textContent = length + ' / ' + MAX;
+  counter.classList.toggle('warn', length > MAX - 200);
+});
+
+function showError(message) {
+  errorBox.textContent = message;
+  errorBox.classList.add('show');
+}
+
+function hideError() {
+  errorBox.classList.remove('show');
+}
+
+form.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  hideError();
+
+  var text = messageText.value.trim();
+  if (text.length < MIN) {
+    showError('Please write at least ' + MIN + ' characters so we can act on this.');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending…';
+
+  try {
+    var result = await SpeakUpApi.submit({
+      messageText: text,
+      department: document.getElementById('department').value || undefined,
+      region: document.getElementById('region').value || undefined,
+      channel: 'web',
+      browserLocale: navigator.language || 'unknown'
+    });
+
+    var submission = result.submission;
+    document.getElementById('refId').textContent = submission.id;
+    document.getElementById('accessCode').textContent = result.accessCode;
+
+    // Show the reporter what the AI understood, so the "noise reduction" layer
+    // is visible rather than a black box.
+    var tags = [];
+    if (submission.category) { tags.push(submission.category); }
+    if (submission.priority) { tags.push('Priority ' + submission.priority); }
+    (submission.keywords || []).slice(0, 4).forEach(function (keyword) { tags.push(keyword); });
+    document.getElementById('tags').innerHTML = tags.map(function (tag) {
+      return '<span class="tag"></span>';
+    }).join('');
+    // Assign text via textContent so submission content can never inject markup.
+    Array.prototype.forEach.call(document.getElementById('tags').children, function (node, index) {
+      node.textContent = tags[index];
+    });
+
+    form.style.display = 'none';
+    confirmPanel.classList.add('show');
+  } catch (error) {
+    showError(error.message || 'Something went wrong. Please try again.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit anonymously';
+  }
+});
+
+document.getElementById('copyBtn').addEventListener('click', function () {
+  var text = 'Reference: ' + document.getElementById('refId').textContent +
+             '\nAccess code: ' + document.getElementById('accessCode').textContent;
+  var button = this;
+  navigator.clipboard.writeText(text).then(function () {
+    button.textContent = 'Copied';
+    setTimeout(function () { button.textContent = 'Copy both'; }, 2000);
+  }).catch(function () {
+    button.textContent = 'Copy failed — select manually';
+  });
+});
+
+document.getElementById('againBtn').addEventListener('click', function () {
+  form.reset();
+  counter.textContent = '0 / ' + MAX;
+  counter.classList.remove('warn');
+  confirmPanel.classList.remove('show');
+  form.style.display = 'block';
+  messageText.focus();
+});
+</script>
+</body>
+</html>

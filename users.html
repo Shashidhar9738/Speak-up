@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakUp — Access management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+:root {
+  --bg:#f3f4f6; --card:#fff; --sidebar-bg:#1a1b2e; --sidebar-text:#94a3b8;
+  --text:#111827; --text-sec:#6b7280; --text-muted:#9ca3af;
+  --accent:#4f46e5; --accent-light:#eef2ff; --success:#059669; --success-light:#ecfdf5;
+  --warning:#d97706; --warning-light:#fffbeb; --danger:#dc2626; --danger-light:#fef2f2;
+  --border:#e5e7eb; --radius:12px; --shadow:0 1px 3px rgba(0,0,0,.06); --font:'Inter',-apple-system,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100vh; padding:32px; }
+.wrap { max-width:1080px; margin:0 auto; }
+
+.top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+h1 { font-size:24px; font-weight:700; }
+.sub { font-size:13px; color:var(--text-sec); margin-bottom:24px; }
+.back { font-size:13px; color:var(--accent); text-decoration:none; }
+
+.card { background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px; margin-bottom:20px; }
+.card-title { font-size:15px; font-weight:600; margin-bottom:4px; display:flex; align-items:center; gap:8px; }
+.card-title i { color:var(--accent); }
+.card-sub { font-size:12px; color:var(--text-muted); margin-bottom:16px; }
+.count-pill { font-size:11px; font-weight:700; background:var(--warning-light); color:var(--warning); padding:2px 9px; border-radius:20px; }
+
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); padding:0 10px 9px; font-weight:600; }
+td { padding:12px 10px; border-top:1px solid var(--border); vertical-align:middle; }
+.email { font-weight:500; }
+.name { font-size:11.5px; color:var(--text-muted); }
+.reason { font-size:11.5px; color:var(--text-sec); max-width:250px; }
+
+.pill { font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; display:inline-block; white-space:nowrap; }
+.st-approved { background:var(--success-light); color:var(--success); }
+.st-pending_approval { background:var(--warning-light); color:var(--warning); }
+.st-pending_verification { background:#f3f4f6; color:var(--text-sec); }
+.st-rejected, .st-revoked { background:var(--danger-light); color:var(--danger); }
+.role-owner { background:#ede9fe; color:#7c3aed; }
+.role-reviewer { background:var(--accent-light); color:var(--accent); }
+.role-lead { background:#f0fdfa; color:#0d9488; }
+.role-analyst { background:#f8fafc; color:#64748b; }
+
+select, input[type=text] {
+  font-family:var(--font); font-size:12px; padding:7px 9px;
+  border:1px solid var(--border); border-radius:7px; background:#fff; max-width:150px;
+}
+select:focus, input:focus { outline:none; border-color:var(--accent); }
+
+button { font-family:var(--font); font-size:12px; font-weight:600; cursor:pointer; border:none; border-radius:7px; padding:7px 13px; margin-right:5px; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+.b-approve { background:var(--success-light); color:var(--success); }
+.b-reject  { background:var(--danger-light); color:var(--danger); }
+.b-revoke  { background:#f3f4f6; color:var(--text-sec); }
+.b-approve:hover:not(:disabled) { background:var(--success); color:#fff; }
+.b-reject:hover:not(:disabled)  { background:var(--danger); color:#fff; }
+
+.empty { padding:28px; text-align:center; color:var(--text-muted); font-size:13px; }
+.alert { border-radius:8px; padding:12px 14px; font-size:13px; margin-bottom:18px; display:none; }
+.alert.show { display:block; }
+.alert.error { background:var(--danger-light); color:#991b1b; }
+.alert.ok { background:var(--success-light); color:#065f46; }
+
+.legend { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:6px; }
+.legend-item { background:#f9fafb; border-radius:9px; padding:12px 14px; }
+.legend-role { font-size:12px; font-weight:700; margin-bottom:5px; }
+.legend-desc { font-size:11.5px; color:var(--text-sec); line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Access management</h1>
+    <a class="back" href="index.html">&larr; Back to dashboard</a>
+  </div>
+  <div class="sub" id="whoami">&nbsp;</div>
+
+  <div class="alert error" id="err"></div>
+  <div class="alert ok" id="ok"></div>
+
+  <div class="card">
+    <div class="card-title"><i class="ti ti-user-question"></i> Awaiting approval <span class="count-pill" id="pendingCount">0</span></div>
+    <div class="card-sub">Verified Comviva addresses requesting dashboard access. Choose the narrowest role that lets them do their job.</div>
+    <div id="pending"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><i class="ti ti-users"></i> All accounts</div>
+    <div class="card-sub">Revoking takes effect immediately — the person's current session stops working on their next request.</div>
+    <div id="all"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><i class="ti ti-shield-lock"></i> What each role can see</div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-role" style="color:#7c3aed;">Owner (CXO)</div>
+        <div class="legend-desc">Every report including harassment and security. Manages accounts. Exports.</div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-role" style="color:var(--accent);">Reviewer (HR / Compliance)</div>
+        <div class="legend-desc">Every report including sensitive ones. Can reply and export. Cannot manage accounts.</div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-role" style="color:#0d9488;">Department lead</div>
+        <div class="legend-desc">Only their own departments. Harassment and security reports are hidden — those often name the lead.</div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-role" style="color:#64748b;">Analyst</div>
+        <div class="legend-desc">Counts, categories and trends only. Never sees complaint text.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/api.js"></script>
+<script>
+var DEPARTMENTS = ['Engineering','Product','Sales','People & HR','Finance','Marketing','Legal','Operations','Support'];
+var me = null;
+
+function esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function flash(box, message) {
+  var node = document.getElementById(box);
+  node.textContent = message;
+  node.classList.add('show');
+  setTimeout(function () { node.classList.remove('show'); }, 4000);
+}
+
+function statusPill(status) {
+  return '<span class="pill st-' + esc(status) + '">' + esc(status.replace(/_/g,' ')) + '</span>';
+}
+
+function rolePill(role) {
+  return '<span class="pill role-' + esc(role) + '">' + esc(role) + '</span>';
+}
+
+function renderPending(users) {
+  var pending = users.filter(function (u) { return u.status === 'pending_approval'; });
+  document.getElementById('pendingCount').textContent = pending.length;
+
+  if (!pending.length) {
+    document.getElementById('pending').innerHTML = '<div class="empty">Nothing waiting. New requests appear here once the person verifies their email.</div>';
+    return;
+  }
+
+  document.getElementById('pending').innerHTML =
+    '<table><thead><tr><th>Person</th><th>Reason given</th><th>Role</th><th>Departments</th><th></th></tr></thead><tbody>' +
+    pending.map(function (u) {
+      var id = btoa(u.email).replace(/=/g,'');
+      return '<tr>' +
+        '<td><div class="email">' + esc(u.email) + '</div><div class="name">' + esc(u.fullName || '—') + '</div></td>' +
+        '<td class="reason">' + esc(u.reason || '—') + '</td>' +
+        '<td><select id="role-' + id + '">' +
+          '<option value="analyst">Analyst</option>' +
+          '<option value="lead">Department lead</option>' +
+          '<option value="reviewer">Reviewer</option>' +
+          '<option value="owner">Owner (CXO)</option>' +
+        '</select></td>' +
+        '<td><select id="dept-' + id + '" multiple size="3" style="max-width:140px;">' +
+          DEPARTMENTS.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') +
+        '</select><div class="name">for leads only</div></td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button class="b-approve" data-act="approve" data-email="' + esc(u.email) + '" data-id="' + id + '">Approve</button>' +
+          '<button class="b-reject" data-act="reject" data-email="' + esc(u.email) + '">Decline</button>' +
+        '</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderAll(users) {
+  document.getElementById('all').innerHTML =
+    '<table><thead><tr><th>Person</th><th>Role</th><th>Scope</th><th>Status</th><th>Approved by</th><th></th></tr></thead><tbody>' +
+    users.map(function (u) {
+      var isSelf = me && u.email === me.email;
+      var scope = u.role === 'lead' ? (u.departments || []).join(', ') || '—' : 'all departments';
+      return '<tr>' +
+        '<td><div class="email">' + esc(u.email) + (isSelf ? ' <span class="name">(you)</span>' : '') + '</div><div class="name">' + esc(u.fullName || '—') + '</div></td>' +
+        '<td>' + rolePill(u.role || 'analyst') + '</td>' +
+        '<td class="name">' + esc(scope) + '</td>' +
+        '<td>' + statusPill(u.status) + '</td>' +
+        '<td class="name">' + esc(u.approvedBy || '—') + '</td>' +
+        '<td>' + (isSelf || u.status !== 'approved' ? '' :
+          '<button class="b-revoke" data-act="revoke" data-email="' + esc(u.email) + '">Revoke</button>') + '</td>' +
+      '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+async function load() {
+  try {
+    var data = await SpeakUpApi.admin.users();
+    renderPending(data.users);
+    renderAll(data.users);
+  } catch (error) {
+    if (error.status === 403) {
+      document.querySelector('.wrap').innerHTML =
+        '<div class="card"><div class="empty">Only SpeakUp owners can manage accounts.<br><br>' +
+        '<a class="back" href="index.html">Back to dashboard</a></div></div>';
+      return;
+    }
+    flash('err', error.message || 'Could not load accounts.');
+  }
+}
+
+document.addEventListener('click', async function (event) {
+  var button = event.target.closest('button[data-act]');
+  if (!button) { return; }
+
+  var email = button.getAttribute('data-email');
+  var action = button.getAttribute('data-act');
+  var id = button.getAttribute('data-id');
+  var role, departments;
+
+  if (action === 'approve' && id) {
+    role = document.getElementById('role-' + id).value;
+    departments = Array.prototype.slice.call(document.getElementById('dept-' + id).selectedOptions)
+      .map(function (option) { return option.value; });
+    if (role === 'lead' && !departments.length) {
+      flash('err', 'Pick at least one department for a department lead.');
+      return;
+    }
+  }
+
+  if (action === 'revoke' && !confirm('Revoke access for ' + email + '? Their session stops working immediately.')) {
+    return;
+  }
+
+  button.disabled = true;
+  try {
+    await SpeakUpApi.admin.decide(email, action, role, departments);
+    flash('ok', email + ' — ' + action + 'd.');
+    await load();
+  } catch (error) {
+    flash('err', error.message || 'Action failed.');
+    button.disabled = false;
+  }
+});
+
+(async function boot() {
+  if (!SpeakUpApi.isSignedIn()) { location.href = 'login.html'; return; }
+  try {
+    var profile = await SpeakUpApi.me();
+    me = profile.user;
+    document.getElementById('whoami').textContent =
+      'Signed in as ' + me.email + ' — ' + profile.scope.roleLabel;
+  } catch (error) {
+    return;
+  }
+  await load();
+})();
+</script>
+</body>
+</html>

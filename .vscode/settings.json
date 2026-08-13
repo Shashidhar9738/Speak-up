@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "*.pq": "plaintext",
+    "*.m": "plaintext",
+    "JiraBtcCounts.txt": "plaintext"
+  },
+  "javascript.validate.enable": false
+}

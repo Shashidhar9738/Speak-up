@@ -1,0 +1,21 @@
+{
+  "name": "speak-up",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "powershell -ExecutionPolicy Bypass -File ./scripts/build.ps1",
+    "start": "node --env-file-if-exists=.env ./backend/src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch ./backend/src/server.js",
+    "api:start": "node --env-file-if-exists=.env ./backend/src/server.js",
+    "api:dev": "node --env-file-if-exists=.env --watch ./backend/src/server.js",
+    "static:preview": "npx --yes http-server ./dist -p 4174"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

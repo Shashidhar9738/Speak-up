@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpeakUp — Track your report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+:root {
+  --bg: #f3f4f6; --card: #ffffff; --text: #111827; --text-sec: #6b7280; --text-muted: #9ca3af;
+  --accent: #4f46e5; --accent-light: #eef2ff; --success: #059669; --success-light: #ecfdf5;
+  --warning: #d97706; --warning-light: #fffbeb; --danger: #dc2626; --danger-light: #fef2f2;
+  --border: #e5e7eb; --radius: 12px; --font: 'Inter', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.wrap { width: 100%; max-width: 620px; }
+.brand { text-align: center; margin-bottom: 24px; }
+.brand-name { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+.brand-sub { font-size: 13px; color: var(--text-sec); margin-top: 4px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+
+label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+input[type=text], textarea {
+  width: 100%; font-family: var(--font); font-size: 14px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: #fff;
+}
+input:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.12); }
+textarea { min-height: 90px; resize: vertical; line-height: 1.6; }
+.field { margin-bottom: 16px; }
+
+button { font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; border: none; border-radius: 8px; padding: 13px 20px; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; width: 100%; }
+.btn-primary:hover:not(:disabled) { background: #4338ca; }
+
+.alert { border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 16px; display: none; }
+.alert.show { display: block; }
+.alert.error { background: var(--danger-light); color: #991b1b; }
+
+.result { display: none; }
+.result.show { display: block; }
+.status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.status-pill { font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: 20px; text-transform: capitalize; }
+.status-open { background: var(--danger-light); color: var(--danger); }
+.status-acknowledged { background: var(--warning-light); color: var(--warning); }
+.status-resolved { background: var(--success-light); color: var(--success); }
+.meta { font-size: 12px; color: var(--text-muted); }
+
+.summary { background: #f9fafb; border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.6; margin-bottom: 18px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tag { font-size: 11px; padding: 3px 9px; border-radius: 20px; background: var(--accent-light); color: var(--accent); font-weight: 500; }
+
+.thread { margin-bottom: 18px; }
+.thread-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.msg { padding: 11px 14px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.55; }
+.msg-admin { background: var(--accent-light); border-left: 3px solid var(--accent); }
+.msg-reporter { background: #f3f4f6; border-left: 3px solid var(--text-muted); }
+.msg-who { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
+
+.footer-note { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 20px; }
+.footer-note a { color: var(--text-sec); }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-brand"><span class="brand-mark"><i class="ti ti-message-report"></i></span>SpeakUp</div>
+  <div class="sidebar-sub">Anonymous employee voice</div>
+
+  <div>
+    <div class="nav-label">For employees</div>
+    <a class="nav-item" href="submit.html"><i class="ti ti-pencil-plus"></i> Share something</a>
+    <a class="nav-item active" href="track.html"><i class="ti ti-search"></i> Track a report</a>
+  </div>
+
+  <div style="margin-top:22px;">
+    <div class="nav-label">Leadership</div>
+    <a class="nav-item" href="login.html"><i class="ti ti-lock"></i> Sign in</a>
+  </div>
+
+  <div class="sidebar-note">
+    Your access code is the only link to your report. We store just a hash of it.
+  </div>
+</div>
+
+<div class="page">
+<div class="wrap">
+  <div class="mobile-nav">
+    <a href="submit.html"><i class="ti ti-arrow-left"></i> Share something new</a>
+  </div>
+  <div class="brand">
+    <div class="brand-name">SpeakUp</div>
+    <div class="brand-sub">Check your report — still anonymous</div>
+  </div>
+
+  <div class="card">
+    <form id="lookupForm">
+      <div class="field">
+        <label for="refId">Reference</label>
+        <input type="text" id="refId" placeholder="subm-…" required autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="accessCode">Access code</label>
+        <input type="text" id="accessCode" placeholder="SPK-XXXXX-XXXXX" required autocomplete="off" style="text-transform:uppercase;">
+      </div>
+      <button type="submit" class="btn-primary" id="lookupBtn">Check status</button>
+      <div class="alert error" id="error"></div>
+    </form>
+
+    <div class="result" id="result">
+      <div class="status-row">
+        <span class="status-pill" id="statusPill">—</span>
+        <span class="meta" id="statusMeta"></span>
+      </div>
+
+      <div class="summary">
+        <div id="summaryText"></div>
+        <div class="tags" id="tags"></div>
+      </div>
+
+      <div class="thread">
+        <div class="thread-title">Messages</div>
+        <div id="messages"></div>
+      </div>
+
+      <form id="replyForm">
+        <label for="replyText">Add a reply</label>
+        <textarea id="replyText" placeholder="Anything else leadership should know?"></textarea>
+        <button type="submit" class="btn-primary" id="replyBtn" style="margin-top:10px;">Send reply</button>
+        <div class="alert error" id="replyError"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <a href="submit.html">Share something new</a>
+  </div>
+</div>
+</div>
+
+<script src="assets/api.js"></script>
+<script>
+var lookupForm = document.getElementById('lookupForm');
+var resultPanel = document.getElementById('result');
+var errorBox = document.getElementById('error');
+var replyError = document.getElementById('replyError');
+var current = { id: '', code: '' };
+
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function timeAgo(iso) {
+  var seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (!isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 60) return 'just now';
+  var minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + 'm ago';
+  var hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h ago';
+  return Math.floor(hours / 24) + 'd ago';
+}
+
+function renderMessages(messages) {
+  var container = document.getElementById('messages');
+  if (!messages.length) {
+    container.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">No messages yet. Leadership will reply here if they need more detail.</div>';
+    return;
+  }
+  container.innerHTML = messages.map(function (m) {
+    var who = m.authorType === 'admin' ? 'Leadership' : 'You';
+    return '<div class="msg msg-' + esc(m.authorType) + '">' +
+             '<div class="msg-who">' + esc(who) + ' &middot; ' + esc(timeAgo(m.createdAt)) + '</div>' +
+             esc(m.messageText) +
+           '</div>';
+  }).join('');
+}
+
+function render(data) {
+  var s = data.submission;
+  var pill = document.getElementById('statusPill');
+  pill.textContent = s.status;
+  pill.className = 'status-pill status-' + s.status;
+  document.getElementById('statusMeta').textContent =
+    'Submitted ' + timeAgo(s.createdAt) + (s.statusNote ? ' — ' + s.statusNote : '');
+  document.getElementById('summaryText').textContent = s.summary;
+  document.getElementById('tags').innerHTML =
+    [s.category, 'Priority ' + s.priority].concat(s.keywords || [])
+      .map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+  renderMessages(data.messages || []);
+  resultPanel.classList.add('show');
+}
+
+lookupForm.addEventListener('submit', async function (event) {
+  event.preventDefault();
+  errorBox.classList.remove('show');
+  resultPanel.classList.remove('show');
+
+  var id = document.getElementById('refId').value.trim();
+  var code = document.getElementById('accessCode').value.trim().toUpperCase();
+  var button = document.getElementById('lookupBtn');
+  button.disabled = true;
+  button.textContent = 'Checking…';
+
+  try {
+    var data = await SpeakUpApi.track(id, code);
+    current = { id: id, code: code };
+    render(data);
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not find that report.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Check status';
+  }
+});
+
+document.getElementById('replyForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  replyError.classList.remove('show');
+
+  var text = document.getElementById('replyText').value.trim();
+  if (!text) { return; }
+
+  var button = document.getElementById('replyBtn');
+  button.disabled = true;
+  button.textContent = 'Sending…';
+
+  try {
+    var data = await SpeakUpApi.trackReply(current.id, current.code, text);
+    document.getElementById('replyText').value = '';
+    renderMessages(data.messages || []);
+  } catch (error) {
+    replyError.textContent = error.message || 'Could not send reply.';
+    replyError.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Send reply';
+  }
+});
+</script>
+</body>
+</html>

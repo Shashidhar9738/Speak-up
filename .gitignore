@@ -1,0 +1,17 @@
+# Secrets — never commit. Use .env.example as the template.
+.env
+.env.local
+.env.*.local
+
+node_modules/
+dist/
+
+# Runtime data — real complaints and real employee email addresses.
+# Neither belongs in version control.
+backend/data/
+!backend/data/.gitkeep
+
+npm-debug.log*
+*.log
+.DS_Store
+Thumbs.db
