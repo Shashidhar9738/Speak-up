@@ -220,6 +220,7 @@ function buildApiInventory() {
       { method: "GET", path: "/api/dashboard/trends", purpose: "Trend-only payload" },
       { method: "GET", path: "/api/dashboard/heatmap", purpose: "Department heatmap payload" },
       { method: "GET", path: "/api/dashboard/alerts", purpose: "High-priority alerts payload" },
+      { method: "GET", path: "/api/dashboard/awaiting-reply", purpose: "Reports where the reporter is waiting on an answer" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
       { method: "GET", path: "/api/todo/apis", purpose: "API inventory and backlog" }
     ],
@@ -883,6 +884,25 @@ app.get("/api/dashboard/heatmap", requireAdmin, async (request, response) => {
   const filtered = await scopedSubmissions(request.user, request.query);
   const metrics = buildMetrics(filtered);
   return response.json({ heatmap: metrics.departmentHeatmap });
+});
+
+/**
+ * Reports where the reporter has replied more recently than anyone answered.
+ * Without this an admin has to open every thread to discover a waiting reply.
+ */
+app.get("/api/dashboard/awaiting-reply", requireAdmin, async (request, response) => {
+  const filtered = await scopedSubmissions(request.user, request.query);
+
+  const waiting = filtered.filter((submission) => {
+    const messages = submission.messages || [];
+    if (!messages.length) { return false; }
+    return messages[messages.length - 1].authorType === "reporter";
+  }).sort(comparePriority);
+
+  return response.json({
+    count: waiting.length,
+    submissions: waiting.slice(0, 25).map((item) => redact(request.user, item))
+  });
 });
 
 app.get("/api/dashboard/alerts", requireAdmin, async (request, response) => {

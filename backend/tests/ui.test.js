@@ -57,6 +57,7 @@ async function loadPage(page, options = {}) {
       metrics: async () => ({ metrics: { totals: {}, statusCounts: {}, sentimentCounts: {}, categoryCounts: {}, topKeywords: [], weeklyTrend: [], departmentHeatmap: {}, priorityIssues: [], latestSubmissions: [] } }),
       submissions: async () => ({ count: 0, submissions: [] }),
       alerts: async () => ({ alerts: [] }),
+      awaitingReply: async () => ({ count: 0, submissions: [] }),
       categories: async () => ({ categories: [] }),
       trends: async () => ({ trends: [] }),
       heatmap: async () => ({ heatmap: {} }),
@@ -433,6 +434,66 @@ test("a filtered view says so, so it is not mistaken for a quiet week", async ()
   const note = window.document.getElementById("resultNote").textContent;
   assert.match(note, /zzz/, "the note does not say what was searched for");
   assert.match(note, /nothing matches/i, "an empty result gave no explanation");
+});
+
+test("staff can still search even without the Feed tab", async () => {
+  const window = await dashboardAs("staff");
+  const bar = window.document.querySelector(".searchbar");
+  assert.ok(bar, "search bar missing entirely");
+
+  const overview = window.document.getElementById("panel-overview");
+  assert.ok(overview.contains(bar),
+    "search bar left on a tab staff cannot open, so they cannot search at all");
+});
+
+test("owner keeps the search bar on the feed", async () => {
+  const window = await dashboardAs("owner");
+  const bar = window.document.querySelector(".searchbar");
+  const feed = window.document.getElementById("panel-feed");
+  assert.ok(feed.contains(bar), "search bar moved away from the feed for an owner");
+});
+
+test("every role can track a report they filed themselves", async () => {
+  for (const role of ["owner", "reviewer", "lead", "staff", "analyst"]) {
+    const window = await dashboardAs(role);
+    const tabs = visibleTabs(window);
+    assert.ok(tabs.includes("mine"), `${role} cannot track their own report`);
+  }
+});
+
+test("tracking uses the access code, never the signed-in identity", async () => {
+  const calls = [];
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "staff@comviva.com", role: "staff" }, scope: scopeFor("staff") }),
+      track: async (id, code) => {
+        calls.push({ id, code });
+        return { submission: { id, status: "open", summary: "x", createdAt: new Date().toISOString() }, messages: [], notifications: [] };
+      }
+    }
+  });
+
+  window.document.getElementById("mineId").value = "TKT-AAAA-BBBB";
+  window.document.getElementById("mineCode").value = "spk-ccccc-ddddd";
+  window.document.getElementById("mineForm")
+    .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+  await new Promise((r) => setTimeout(r, 80));
+
+  assert.equal(calls.length, 1, "lookup never reached the API");
+  assert.equal(calls[0].id, "TKT-AAAA-BBBB");
+  assert.equal(calls[0].code, "SPK-CCCCC-DDDDD", "code was not normalised to upper case");
+});
+
+test("the dashboard never lists a signed-in user's own reports", async () => {
+  const window = await dashboardAs("staff");
+  const panel = window.document.getElementById("panel-mine");
+  assert.ok(panel, "no My report panel");
+  // A list keyed on identity would make every report attributable.
+  assert.ok(panel.querySelector("#mineForm"),
+    "expected a code lookup, not a list of the user's reports");
+  assert.match(panel.textContent, /not linked to your reports/i,
+    "the page does not explain that the account is not linked to submissions");
 });
 
 /* ---------------- escaping ---------------- */

@@ -302,6 +302,9 @@
       heatmap: function (query) {
         return request("/api/dashboard/heatmap" + toQueryString(query), { auth: true });
       },
+      awaitingReply: function (query) {
+        return request("/api/dashboard/awaiting-reply" + toQueryString(query), { auth: true });
+      },
       alerts: function (query) {
         return request("/api/dashboard/alerts" + toQueryString(query), { auth: true });
       },

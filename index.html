@@ -183,6 +183,31 @@ body {
 .card-title i { color: var(--accent); font-size: 17px; }
 .card-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
 
+/* MY REPORTS — a signed-in user tracking their OWN submission */
+.mine-note { background: var(--accent-light); border-radius: 10px; padding: 13px 15px; margin-bottom: 18px; }
+.mine-note-text { font-size: 12.5px; color: #3730a3; line-height: 1.6; }
+.mine-form { display: flex; gap: 9px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 18px; }
+.mine-field { flex: 1; min-width: 190px; }
+.mine-field label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 5px; }
+.mine-field input {
+  width: 100%; font-family: var(--font); font-size: 13.5px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; background: var(--card);
+}
+.mine-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+.mine-result { display: none; }
+.mine-result.show { display: block; }
+.mine-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.mine-pill { font-size: 12px; font-weight: 600; padding: 5px 13px; border-radius: 20px; text-transform: capitalize; }
+.mine-open { background: var(--danger-light); color: var(--danger); }
+.mine-acknowledged { background: var(--warning-light); color: var(--warning); }
+.mine-resolved { background: var(--success-light); color: var(--success); }
+.mine-summary { background: var(--card-alt); border-radius: 10px; padding: 14px; font-size: 13.5px; line-height: 1.6; margin-bottom: 16px; }
+.mine-msg { padding: 11px 14px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; line-height: 1.55; }
+.mine-msg-admin { background: var(--accent-light); border-left: 3px solid var(--accent); }
+.mine-msg-reporter { background: var(--border-soft); border-left: 3px solid var(--text-muted); }
+.mine-who { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 4px; font-weight: 700; }
+.mine-notice { background: var(--warning-light); border-radius: 9px; padding: 11px 13px; font-size: 12.5px; color: #92400e; margin-bottom: 8px; }
+
 /* SEARCH BAR */
 .searchbar { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
 .search-wrap { position: relative; flex: 1; min-width: 240px; }
@@ -571,6 +596,7 @@ body {
     <a class="nav-item" data-nav="critical"><i class="ti ti-alert-triangle"></i> Critical issues <span class="nav-badge red">8</span></a>
     <a class="nav-item" data-nav="feed"><i class="ti ti-list"></i> All complaints <span class="nav-badge blue">42</span></a>
     <a class="nav-item" data-nav="recognition"><i class="ti ti-confetti"></i> Recognition <span class="nav-badge blue" id="kudBadge">0</span></a>
+    <a class="nav-item" data-nav="mine"><i class="ti ti-ticket"></i> Track my report</a>
   </div>
 
   <div class="nav-group">
@@ -632,11 +658,13 @@ body {
     <div class="tab" data-tab="critical"><i class="ti ti-alert-triangle"></i> Critical</div>
     <div class="tab" data-tab="feed"><i class="ti ti-list"></i> Feed</div>
       <div class="tab" data-tab="recognition"><i class="ti ti-confetti"></i> Recognition</div>
+    <div class="tab" data-tab="mine"><i class="ti ti-ticket"></i> My report</div>
     <div class="tab" data-tab="trends"><i class="ti ti-trending-up"></i> Trends</div>
   </div>
 
   <!-- OVERVIEW -->
   <div class="panel active" id="panel-overview">
+    <div id="overviewSearchHost"></div>
     <div style="display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:20px;">
       <div class="card">
         <div class="card-title"><i class="ti ti-chart-bar"></i> Weekly report volume</div>
@@ -741,6 +769,54 @@ body {
           <div class="card-title"><i class="ti ti-category"></i> What for</div>
           <div id="kudCategories"></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-mine">
+    <div class="card">
+      <div class="card-title"><i class="ti ti-ticket"></i> Track a report you submitted</div>
+      <div class="card-sub">Enter the reference and access code you were given when you submitted.</div>
+
+      <div class="mine-note">
+        <div class="mine-note-text">
+          <strong>Your account is not linked to your reports.</strong> Signing in does not
+          tell us what you submitted, and there is no list of "your" reports anywhere —
+          that is what keeps a report anonymous. The access code you saved is the only
+          way back to it, for you or for anyone.
+        </div>
+      </div>
+
+      <form id="mineForm">
+        <div class="mine-form">
+          <div class="mine-field">
+            <label for="mineId">Reference</label>
+            <input type="text" id="mineId" placeholder="TKT-XXXX-XXXX" autocomplete="off" required>
+          </div>
+          <div class="mine-field">
+            <label for="mineCode">Access code</label>
+            <input type="text" id="mineCode" placeholder="SPK-XXXXX-XXXXX" autocomplete="off" required style="text-transform:uppercase;">
+          </div>
+          <button type="submit" class="action-btn resolve" id="mineBtn" style="padding:10px 18px;">Check status</button>
+        </div>
+        <div class="pwd-alert error" id="mineError"></div>
+      </form>
+
+      <div class="mine-result" id="mineResult">
+        <div class="mine-row">
+          <span class="mine-pill" id="minePill">—</span>
+          <span style="font-size:12px;color:var(--text-muted);" id="mineMeta"></span>
+        </div>
+        <div id="mineNotices"></div>
+        <div class="mine-summary" id="mineSummary"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:9px;">Messages</div>
+        <div id="mineMessages"></div>
+        <form id="mineReplyForm" style="margin-top:14px;">
+          <label for="mineReply" style="display:block;font-size:12px;font-weight:500;margin-bottom:5px;">Add a reply</label>
+          <textarea id="mineReply" rows="3" style="width:100%;font-family:var(--font);font-size:13.5px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;resize:vertical;"></textarea>
+          <button type="submit" class="action-btn resolve" id="mineReplyBtn" style="margin-top:9px;padding:9px 16px;">Send reply</button>
+          <div class="pwd-alert error" id="mineReplyError"></div>
+        </form>
       </div>
     </div>
   </div>
@@ -923,7 +999,7 @@ function isoWeek(iso) {
 }
 
 // Shared state
-const state = { metrics:null, submissions:[], alerts:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
+const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
 
 function setBusy(isBusy) {
   document.body.style.cursor = isBusy ? 'progress' : '';
@@ -1087,6 +1163,12 @@ function renderExecSummary(metrics, submissions) {
     points.push({
       icon: 'ti-building', tone: 'neutral',
       text: `<strong>${esc(hotspot[0])}</strong> accounts for ${hotspotShare}% of all reports.`
+    });
+  }
+  if (state.awaitingReply && state.awaitingReply.length) {
+    points.push({
+      icon: 'ti-message-reply', tone: 'warning',
+      text: `<strong>${state.awaitingReply.length} reporter${state.awaitingReply.length > 1 ? 's are' : ' is'} waiting</strong> on a reply from leadership.`
     });
   }
   if (p2Open.length) {
@@ -1697,10 +1779,11 @@ async function loadAll(options) {
   if (!settings.silent) { setBusy(true); }
 
   try {
-    const [metricsResult, submissionsResult, alertsResult] = await Promise.all([
+    const [metricsResult, submissionsResult, alertsResult, waitingResult] = await Promise.all([
       SpeakUpApi.dashboard.metrics(state.filters),
       SpeakUpApi.dashboard.submissions(Object.assign({ limit: 200 }, state.filters)),
-      SpeakUpApi.dashboard.alerts(state.filters)
+      SpeakUpApi.dashboard.alerts(state.filters),
+      SpeakUpApi.dashboard.awaitingReply(state.filters).catch(() => ({ submissions: [] }))
     ]);
 
     const metrics = metricsResult.metrics;
@@ -1709,6 +1792,7 @@ async function loadAll(options) {
     state.unfilteredTotal = state.unfilteredTotal || submissionsResult.count;
     renderResultNote(submissionsResult.count, state.unfilteredTotal, submissionsResult.filters || {});
     state.alerts = alertsResult.alerts || [];
+    state.awaitingReply = waitingResult.submissions || [];
 
     const total = (metrics.totals && metrics.totals.submissions) || 0;
 
@@ -1921,19 +2005,36 @@ document.addEventListener('click', function (event) {
  * role may not do, so hiding a tab is never the access control itself.
  * --------------------------------------------------------------------- */
 var ROLE_UI = {
-  owner:    { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends'],
+  owner:    { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','mine'],
               briefing: 'exec', title: 'Leadership dashboard' },
-  reviewer: { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends'],
+  reviewer: { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','mine'],
               briefing: 'exec', title: 'Review dashboard' },
-  lead:     { tabs: ['overview','categories','heatmap','feed','recognition','trends'],
+  lead:     { tabs: ['overview','categories','heatmap','feed','recognition','trends','mine'],
               briefing: 'exec', title: 'Department dashboard' },
-  staff:    { tabs: ['overview','categories','heatmap','trends','recognition'],
+  staff:    { tabs: ['overview','categories','heatmap','trends','recognition','mine'],
               briefing: 'staff', title: 'Employee view' },
-  analyst:  { tabs: ['overview','categories','heatmap','trends'],
+  analyst:  { tabs: ['overview','categories','heatmap','trends','mine'],
               briefing: 'staff', title: 'Analytics view' }
 };
 
 function uiFor(role) { return ROLE_UI[role] || ROLE_UI.analyst; }
+
+/**
+ * The search bar lives on the Feed tab, which staff and analysts do not have.
+ * Rather than duplicate it, move the one that exists to whichever panel that
+ * role can actually reach.
+ */
+function placeSearchBar(ui) {
+  var bar = document.querySelector('.searchbar');
+  var note = document.getElementById('resultNote');
+  var host = document.getElementById('overviewSearchHost');
+  if (!bar || !host) { return; }
+
+  if (ui.tabs.indexOf('feed') === -1) {
+    host.appendChild(bar);
+    if (note) { host.appendChild(note); }
+  }
+}
 
 function applyRoleInterface(scope) {
   var ui = uiFor(scope.role);
@@ -1955,6 +2056,7 @@ function applyRoleInterface(scope) {
   }
 
   document.querySelector('.sidebar-sub').textContent = ui.title;
+  placeSearchBar(ui);
   return ui;
 }
 
@@ -2096,6 +2198,98 @@ function renderResultNote(count, total, filters) {
     });
   });
 }
+
+
+/* ----------------------------- MY REPORT -----------------------------
+ * A signed-in user tracking their own submission. Deliberately keyed on the
+ * access code, NOT on the session: linking reports to the account that filed
+ * them would make every report attributable, which is the one thing the
+ * product promises it cannot do. The dashboard therefore has no "my reports"
+ * list, only this lookup.
+ * -------------------------------------------------------------------- */
+var mineCurrent = { id: '', code: '' };
+
+function mineRender(data) {
+  var s = data.submission;
+
+  var pill = document.getElementById('minePill');
+  pill.textContent = s.status;
+  pill.className = 'mine-pill mine-' + s.status;
+
+  document.getElementById('mineMeta').textContent =
+    'Submitted ' + timeAgo(s.createdAt) +
+    (s.sla ? ' \u00b7 target ' + s.sla : '') +
+    (s.statusNote ? ' \u00b7 ' + s.statusNote : '');
+
+  document.getElementById('mineNotices').innerHTML =
+    (data.notifications || []).filter(function (n) { return !n.read; })
+      .map(function (n) {
+        return '<div class="mine-notice"><strong>' + esc(n.title) + '</strong><br>' + esc(n.body) + '</div>';
+      }).join('');
+
+  document.getElementById('mineSummary').textContent = s.summary || s.messageText || '';
+
+  var messages = data.messages || [];
+  document.getElementById('mineMessages').innerHTML = messages.length
+    ? messages.map(function (m) {
+        return '<div class="mine-msg mine-msg-' + esc(m.authorType) + '">' +
+          '<div class="mine-who">' + (m.authorType === 'admin' ? 'Leadership' : 'You') +
+          ' \u00b7 ' + esc(timeAgo(m.createdAt)) + '</div>' + esc(m.messageText) + '</div>';
+      }).join('')
+    : '<div style="font-size:12.5px;color:var(--text-muted);">No messages yet.</div>';
+
+  document.getElementById('mineResult').classList.add('show');
+}
+
+document.getElementById('mineForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('mineError');
+  errorBox.classList.remove('show');
+
+  var id = document.getElementById('mineId').value.trim();
+  var code = document.getElementById('mineCode').value.trim().toUpperCase();
+  var button = document.getElementById('mineBtn');
+  button.disabled = true;
+  button.textContent = 'Checking\u2026';
+
+  try {
+    var data = await SpeakUpApi.track(id, code);
+    mineCurrent = { id: id, code: code };
+    mineRender(data);
+  } catch (error) {
+    errorBox.textContent = error.message || 'No report matches that reference and code.';
+    errorBox.classList.add('show');
+    document.getElementById('mineResult').classList.remove('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Check status';
+  }
+});
+
+document.getElementById('mineReplyForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('mineReplyError');
+  errorBox.classList.remove('show');
+
+  var text = document.getElementById('mineReply').value.trim();
+  if (!text) { return; }
+
+  var button = document.getElementById('mineReplyBtn');
+  button.disabled = true;
+  button.textContent = 'Sending\u2026';
+
+  try {
+    await SpeakUpApi.trackReply(mineCurrent.id, mineCurrent.code, text);
+    document.getElementById('mineReply').value = '';
+    mineRender(await SpeakUpApi.track(mineCurrent.id, mineCurrent.code));
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not send that reply.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Send reply';
+  }
+});
 
 /* ----------------------------- SESSION ----------------------------- */
 
