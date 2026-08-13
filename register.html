@@ -98,6 +98,10 @@ button:disabled { opacity:.55; cursor:not-allowed; }
         <label for="fullName">Full name</label>
         <input type="text" id="fullName" required placeholder="Your name" autocomplete="name">
 
+        <label for="password">Choose a password</label>
+        <input type="password" id="password" required autocomplete="new-password" placeholder="At least 10 characters">
+        <div class="hint">At least 10 characters. Longer beats complicated.</div>
+
         <label for="reason">Your role <span class="hint">(optional)</span></label>
         <textarea id="reason" placeholder="e.g. Head of People Ops"></textarea>
         <div class="hint">Helps an owner give you the right level of access later.</div>
@@ -183,7 +187,8 @@ document.getElementById('registerForm').addEventListener('submit', async functio
     var result = await SpeakUpApi.register({
       email: email,
       fullName: document.getElementById('fullName').value.trim(),
-      reason: document.getElementById('reason').value.trim()
+      reason: document.getElementById('reason').value.trim(),
+      password: document.getElementById('password').value
     });
 
     if (result.status === 'approved') {

@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 const config = require("../config");
+const { hashPassword, verifyPassword } = require("./passwordService");
 
 /**
  * Dashboard accounts.
@@ -115,7 +116,8 @@ function publicUser(user) {
   if (!user) {
     return null;
   }
-  const { verificationCodeHash, verificationExpiresAt, verificationAttempts, ...safe } = user;
+  const { verificationCodeHash, verificationExpiresAt, verificationAttempts, passwordHash, ...safe } = user;
+  safe.hasPassword = Boolean(passwordHash);
   return safe;
 }
 
@@ -165,7 +167,7 @@ async function ensureBootstrapOwner(email) {
   });
 }
 
-async function registerUser({ email, fullName, reason }) {
+async function registerUser({ email, fullName, reason, passwordHash }) {
   const target = normalizeEmail(email);
 
   return withLock(async () => {
@@ -192,6 +194,7 @@ async function registerUser({ email, fullName, reason }) {
       existing.updatedAt = now;
       if (fullName) { existing.fullName = fullName; }
       if (reason) { existing.reason = reason; }
+      if (passwordHash) { existing.passwordHash = passwordHash; }
       await writeStore(store);
       return { user: existing, code };
     }
@@ -202,6 +205,7 @@ async function registerUser({ email, fullName, reason }) {
       reason: reason || "",
       role: DEFAULT_ROLE,
       departments: [],
+      passwordHash: passwordHash || null,
       status: STATUS.PENDING_VERIFICATION,
       source: "registration",
       createdAt: now,
@@ -287,6 +291,35 @@ async function setUserStatus({ email, status, actorEmail, role, departments }) {
   });
 }
 
+async function setPassword(email, plainPassword) {
+  const target = normalizeEmail(email);
+  const passwordHash = await hashPassword(plainPassword);
+
+  return withLock(async () => {
+    const store = await readStore();
+    const user = store.users.find((item) => item.email === target);
+    if (!user) { return null; }
+    user.passwordHash = passwordHash;
+    user.passwordSetAt = new Date().toISOString();
+    user.updatedAt = user.passwordSetAt;
+    await writeStore(store);
+    return user;
+  });
+}
+
+/**
+ * Password check. Always runs the KDF, even for an unknown address, so response
+ * timing cannot be used to discover which emails have accounts.
+ */
+async function checkPassword(email, plainPassword) {
+  const user = await findUser(email);
+  const matched = await verifyPassword(plainPassword, user && user.passwordHash);
+  if (!user || !matched) {
+    return { ok: false };
+  }
+  return { ok: true, user };
+}
+
 async function listUsers() {
   const store = await readStore();
   return store.users
@@ -335,5 +368,7 @@ module.exports = {
   listUsers,
   findUser,
   canSignIn,
+  setPassword,
+  checkPassword,
   publicUser
 };

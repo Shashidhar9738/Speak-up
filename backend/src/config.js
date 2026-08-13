@@ -90,7 +90,10 @@ module.exports = {
   smtpConfigured: Boolean(process.env.SPEAKUP_SMTP_URL),
   authSecret: resolveAuthSecret(nodeEnv),
   tokenTtlHours: Number(process.env.SPEAKUP_TOKEN_TTL_HOURS || 12),
-  corsOrigin: process.env.SPEAKUP_CORS_ORIGIN || "*",
+  // "*" is a development convenience. In production an explicit origin (or
+  // same-origin, the default here) stops any website from calling this API
+  // with a token it has managed to obtain.
+  corsOrigin: process.env.SPEAKUP_CORS_ORIGIN || (nodeEnv === "production" ? "" : "*"),
   rateLimit: {
     authWindowMs: Number(process.env.SPEAKUP_AUTH_RATE_WINDOW_MS || 15 * 60 * 1000),
     authMaxRequests: Number(process.env.SPEAKUP_AUTH_RATE_MAX || 10),

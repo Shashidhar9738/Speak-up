@@ -23,8 +23,11 @@ const {
   canSignIn,
   isAllowedDomain,
   isBootstrapOwner,
+  setPassword,
+  checkPassword,
   publicUser
 } = require("./services/userService");
+const { validatePassword, hashPassword, MIN_LENGTH } = require("./services/passwordService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -37,7 +40,11 @@ const {
 const VALID_STATUSES = new Set(["open", "acknowledged", "resolved"]);
 
 function applyCors(request, response, next) {
-  response.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
+  // An empty corsOrigin means same-origin only: send no ACAO header at all,
+  // which is stricter than sending "*".
+  if (config.corsOrigin) {
+    response.setHeader("Access-Control-Allow-Origin", config.corsOrigin);
+  }
   response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 
@@ -116,7 +123,8 @@ function buildApiInventory() {
       { method: "POST", path: "/api/auth/login", purpose: "Allowlisted admin login" },
       { method: "POST", path: "/api/auth/validate", purpose: "Bearer token validation" },
       { method: "POST", path: "/api/auth/logout", purpose: "Client logout helper" },
-      { method: "POST", path: "/api/auth/register", purpose: "Domain-restricted access request" },
+      { method: "POST", path: "/api/auth/register", purpose: "Domain-restricted access request with password" },
+      { method: "POST", path: "/api/auth/password", purpose: "Change own password" },
       { method: "POST", path: "/api/auth/verify", purpose: "Email verification code exchange" },
       { method: "GET", path: "/api/auth/registration-status", purpose: "Registration state lookup" },
       { method: "GET", path: "/api/admin/users", purpose: "Owner-only account list" },
@@ -179,17 +187,50 @@ const REGISTRATION_HELP = {
 
 app.post("/api/auth/login", authRateLimiter, validateLoginRequest, async (request, response) => {
   const email = request.validated.email;
-  const verdict = await canSignIn(email);
+  const password = String(request.body?.password || "");
 
-  if (!verdict.allowed) {
-    return response.status(403).json({
-      error: REGISTRATION_HELP[verdict.reason] || "This account cannot sign in",
-      status: verdict.reason
-    });
+  if (!password) {
+    return response.status(400).json({ error: "Password is required" });
+  }
+
+  const verdict = await canSignIn(email);
+  const credentials = await checkPassword(email, password);
+
+  // A single generic message for "no such account", "wrong password" and
+  // "not approved": anything more specific turns this endpoint into a way to
+  // discover which colleagues hold dashboard accounts.
+  if (!verdict.allowed || !credentials.ok) {
+    if (verdict.allowed === false && credentials.ok && REGISTRATION_HELP[verdict.reason]) {
+      // Correct password but the account is not usable yet — safe to explain,
+      // because they have already proved they own it.
+      return response.status(403).json({
+        error: REGISTRATION_HELP[verdict.reason],
+        status: verdict.reason
+      });
+    }
+    return response.status(401).json({ error: "Incorrect email or password" });
   }
 
   const token = createToken(email);
   return response.json({ token, email, role: verdict.role, expiresInHours: config.tokenTtlHours });
+});
+
+app.post("/api/auth/password", requireAdmin, async (request, response, next) => {
+  const current = String(request.body?.currentPassword || "");
+  const next_ = String(request.body?.newPassword || "");
+
+  const check = validatePassword(next_, request.user.email);
+  if (!check.ok) {
+    return next(createHttpError(400, check.reason));
+  }
+
+  const credentials = await checkPassword(request.user.email, current);
+  if (!credentials.ok) {
+    return next(createHttpError(401, "Current password is incorrect"));
+  }
+
+  await setPassword(request.user.email, next_);
+  return response.json({ changed: true, message: "Password updated." });
 });
 
 /**
@@ -205,7 +246,17 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
 
   const fullName = String(request.body?.fullName || "").trim().slice(0, 120);
   const reason = String(request.body?.reason || "").trim().slice(0, 500);
-  const result = await registerUser({ email, fullName, reason });
+  const password = String(request.body?.password || "");
+
+  const check = validatePassword(password, email);
+  if (!check.ok) {
+    return next(createHttpError(400, check.reason));
+  }
+
+  const result = await registerUser({
+    email, fullName, reason,
+    passwordHash: await hashPassword(password)
+  });
 
   if (result.alreadyApproved) {
     return response.json({ status: "approved", message: "This account is already approved. Sign in instead." });
@@ -217,7 +268,8 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
   const payload = {
     status: "pending_verification",
     email,
-    message: `We sent a 6-digit code to ${email}. It expires in ${config.verificationTtlMinutes} minutes.`
+    message: `We sent a 6-digit code to ${email}. It expires in ${config.verificationTtlMinutes} minutes.`,
+    passwordPolicy: `At least ${MIN_LENGTH} characters.`
   };
 
   // Returning the code to the caller is a development affordance only. Doing it

@@ -36,12 +36,12 @@ h1 { font-size: 18px; margin-bottom: 6px; }
 .sub { font-size: 13px; color: var(--text-sec); margin-bottom: 22px; line-height: 1.55; }
 
 label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
-input[type=email] {
+input[type=email], input[type=password] {
   width: 100%; font-family: var(--font); font-size: 14px;
   border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
   transition: border-color 150ms, box-shadow 150ms;
 }
-input[type=email]:focus {
+input[type=email]:focus, input[type=password]:focus {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,0.12);
 }
 
@@ -83,8 +83,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
     <form id="form">
       <label for="email">Work email</label>
-      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@company.com" autofocus>
-      <button type="submit" id="submitBtn">Continue</button>
+      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@comviva.com" autofocus>
+
+      <label for="password" style="margin-top:14px;">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Your password">
+
+      <button type="submit" id="submitBtn">Sign in</button>
     </form>
 
     <div class="note">
@@ -133,21 +137,21 @@ form.addEventListener('submit', async function (event) {
   noticeBox.classList.remove('show');
 
   var email = emailInput.value.trim();
-  if (!email) { return; }
+  var password = document.getElementById('password').value;
+  if (!email || !password) { return; }
 
   submitBtn.disabled = true;
   submitBtn.textContent = 'Signing in…';
 
   try {
-    await SpeakUpApi.login(email);
+    await SpeakUpApi.login(email, password);
     location.href = 'index.html';
   } catch (error) {
-    errorBox.textContent = error.status === 403
-      ? 'That email is not on the leadership allowlist.'
-      : (error.message || 'Sign in failed. Please try again.');
+    errorBox.textContent = error.message || 'Sign in failed. Please try again.';
+    document.getElementById('password').value = '';
     errorBox.classList.add('show');
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Continue';
+    submitBtn.textContent = 'Sign in';
   }
 });
 </script>

@@ -1,0 +1,70 @@
+# Render deployment.
+#
+# Render terminates TLS at its edge and gives the service a real HTTPS URL, so
+# complaint text and session tokens no longer cross the network in cleartext —
+# the thing that made local network hosting unsafe.
+#
+# Deploy:
+#   1. render.com -> New -> Blueprint -> connect the Speak-up repo
+#   2. Render reads this file and creates the service
+#   3. Set SPEAKUP_ADMIN_EMAILS in the dashboard (see below)
+#   4. Deploy
+services:
+  - type: web
+    name: speakup
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node ./backend/src/server.js
+    healthCheckPath: /api/health
+
+    # The free plan's filesystem is wiped on every deploy and on the idle
+    # restart, which would silently delete every complaint. A disk keeps
+    # backend/data across restarts.
+    disk:
+      name: speakup-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Must bind to all interfaces inside the container, or Render's proxy
+      # cannot reach the process.
+      - key: SPEAKUP_HOST
+        value: 0.0.0.0
+
+      # Render terminates TLS upstream; this silences the cleartext warning.
+      - key: SPEAKUP_BEHIND_TLS
+        value: "true"
+
+      # Generated once by Render and kept across deploys. Never commit a real
+      # secret — production refuses to boot without one, by design.
+      - key: SPEAKUP_ADMIN_SECRET
+        generateValue: true
+
+      - key: SPEAKUP_DATA_FILE
+        value: /var/data/submissions.json
+      - key: SPEAKUP_USER_FILE
+        value: /var/data/users.json
+
+      - key: SPEAKUP_ADMIN_DOMAINS
+        value: comviva.com
+
+      # Set this in the Render dashboard, not here — it names real people.
+      # Without it the app falls back to its built-in demo addresses and nobody
+      # at your company can sign in.
+      - key: SPEAKUP_ADMIN_EMAILS
+        sync: false
+
+      # Same-origin in this setup, so no wildcard CORS.
+      - key: SPEAKUP_CORS_ORIGIN
+        sync: false
+
+      - key: SPEAKUP_TOKEN_TTL_HOURS
+        value: "12"
+      - key: SPEAKUP_AUTH_RATE_MAX
+        value: "10"
+      - key: SPEAKUP_SUBMISSION_RATE_MAX
+        value: "5"

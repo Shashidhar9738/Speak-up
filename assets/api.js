@@ -130,10 +130,21 @@
       return request("/api/health");
     },
 
-    login: async function (email) {
-      var result = await request("/api/auth/login", { method: "POST", body: { email: email } });
+    login: async function (email, password) {
+      var result = await request("/api/auth/login", {
+        method: "POST",
+        body: { email: email, password: password }
+      });
       setSession(result.token, result.email);
       return result;
+    },
+
+    changePassword: function (currentPassword, newPassword) {
+      return request("/api/auth/password", {
+        method: "POST",
+        auth: true,
+        body: { currentPassword: currentPassword, newPassword: newPassword }
+      });
     },
 
     me: function () {
