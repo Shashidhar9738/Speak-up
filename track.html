@@ -15,8 +15,40 @@
   --border: #e5e7eb; --radius: 12px; --font: 'Inter', -apple-system, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.wrap { width: 100%; max-width: 620px; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; display: flex; }
+/* SIDEBAR — matches submit.html so the employee pages feel like one place. */
+.sidebar { width:232px; background:#12131f; color:#8b93a7; flex-shrink:0; padding:22px 14px;
+  display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; z-index:50; }
+.sidebar-brand { font-size:19px; font-weight:700; color:#fff; padding:0 10px; letter-spacing:-.3px;
+  display:flex; align-items:center; gap:9px; }
+.brand-mark { width:26px; height:26px; border-radius:8px;
+  background:linear-gradient(135deg, var(--accent), #7c6df2);
+  display:flex; align-items:center; justify-content:center; font-size:14px; color:#fff; flex-shrink:0; }
+.sidebar-sub { font-size:11px; color:#5d6579; margin:3px 0 26px; padding:0 10px 0 45px; }
+.nav-label { font-size:10px; text-transform:uppercase; letter-spacing:.9px; color:#4a5164;
+  padding:0 10px; margin-bottom:6px; font-weight:600; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px;
+  cursor:pointer; transition:background 140ms,color 140ms; font-size:13px; color:#8b93a7;
+  text-decoration:none; position:relative; }
+.nav-item:hover { background:rgba(255,255,255,.05); color:#d7dbe4; }
+.nav-item.active { background:#1c1e2e; color:#fff; font-weight:500; }
+.nav-item.active::before { content:''; position:absolute; left:-14px; top:8px; bottom:8px; width:3px;
+  border-radius:0 3px 3px 0; background:#7c6df2; }
+.nav-item i { font-size:17px; width:19px; text-align:center; }
+.sidebar-note { margin-top:auto; padding:12px 10px; border-top:1px solid rgba(255,255,255,.07);
+  font-size:11px; color:#5d6579; line-height:1.55; }
+
+.page { margin-left:232px; flex:1; display:flex; align-items:center; justify-content:center;
+  padding:32px 24px; min-width:0; }
+.wrap { width:100%; max-width:620px; }
+.mobile-nav { display:none; margin-bottom:16px; }
+.mobile-nav a { font-size:13px; color:var(--accent); text-decoration:none;
+  display:inline-flex; align-items:center; gap:5px; }
+@media (max-width:900px) {
+  .sidebar { display:none; }
+  .page { margin-left:0; padding:24px 18px; }
+  .mobile-nav { display:block; }
+}
 .brand { text-align: center; margin-bottom: 24px; }
 .brand-name { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
 .brand-sub { font-size: 13px; color: var(--text-sec); margin-top: 4px; }
@@ -133,7 +165,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
     <form id="lookupForm">
       <div class="field">
         <label for="refId">Reference</label>
-        <input type="text" id="refId" placeholder="subm-…" required autocomplete="off">
+        <input type="text" id="refId" placeholder="TKT-XXXX-XXXX" required autocomplete="off">
       </div>
       <div class="field">
         <label for="accessCode">Access code</label>

@@ -496,6 +496,46 @@ test("the dashboard never lists a signed-in user's own reports", async () => {
     "the page does not explain that the account is not linked to submissions");
 });
 
+/* ---------------- markup without styling ---------------- */
+
+/**
+ * track.html shipped with the sidebar markup but no sidebar CSS, so it rendered
+ * as unstyled stacked divs. A silent find-and-replace that did not match is
+ * invisible until someone opens the page — this catches it instead.
+ */
+for (const page of ["submit.html", "track.html", "appreciation.html"]) {
+  test(`${page}: every structural class it uses is actually styled`, async () => {
+    const html = fs.readFileSync(path.join(ROOT, page), "utf8");
+    const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join(" ");
+
+    for (const className of ["sidebar", "page", "nav-item", "brand-mark", "wrap"]) {
+      if (new RegExp(`class="[^"]*\b${className}\b`).test(html)) {
+        assert.ok(new RegExp(`\.${className}\s*[,{]`).test(css),
+          `${page} uses .${className} in markup but never styles it`);
+      }
+    }
+  });
+
+  test(`${page}: stylesheet braces balance`, async () => {
+    const html = fs.readFileSync(path.join(ROOT, page), "utf8");
+    const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join(" ");
+    let depth = 0;
+    for (const character of css) {
+      if (character === "{") { depth += 1; }
+      if (character === "}") { depth -= 1; }
+      assert.ok(depth >= 0, `${page} has a stray closing brace`);
+    }
+    assert.equal(depth, 0, `${page} has an unclosed CSS rule`);
+  });
+}
+
+test("track.html tells reporters the current ticket format", async () => {
+  const html = fs.readFileSync(path.join(ROOT, "track.html"), "utf8");
+  assert.ok(!html.includes('placeholder="subm-'),
+    "placeholder still shows the retired subm- id format");
+  assert.match(html, /TKT-/, "no example of the current ticket format");
+});
+
 /* ---------------- escaping ---------------- */
 
 test("index.html: complaint text is escaped, not injected", async () => {
