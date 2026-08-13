@@ -157,6 +157,44 @@ test("login.html: reveal toggle switches the field type and back", async () => {
   assert.equal(input.type, "password", "toggle did not re-hide");
 });
 
+test("login.html: the toggle keeps its icon element across toggles", async () => {
+  const window = await loadPage("login.html");
+  const input = window.document.getElementById("password");
+  const toggle = input.parentNode.querySelector(".pwd-toggle");
+
+  const iconBefore = toggle.querySelector("i");
+  assert.ok(iconBefore, "toggle has no icon");
+
+  toggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+  const iconRevealed = toggle.querySelector("i");
+  assert.ok(iconRevealed, "icon vanished after revealing");
+  assert.equal(iconRevealed, iconBefore, "icon element was replaced instead of restyled");
+  assert.match(iconRevealed.className, /eye-off/);
+
+  toggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+  assert.match(toggle.querySelector("i").className, /ti-eye$/, "icon did not return to the closed eye");
+});
+
+test("login.html: the wrapper fills its row so the field cannot collapse", async () => {
+  const window = await loadPage("login.html");
+  const wrap = window.document.querySelector(".pwd-wrap");
+  const styles = [...window.document.querySelectorAll("style")].map((n) => n.textContent).join(" ");
+  assert.match(styles, /\.pwd-wrap\s*\{[^}]*display:\s*block/,
+    "an inline wrapper collapses the input it contains");
+  assert.ok(wrap, "no password wrapper found");
+});
+
+test("login.html: pressing the toggle does not blur the input away", async () => {
+  const window = await loadPage("login.html");
+  const input = window.document.getElementById("password");
+  const toggle = input.parentNode.querySelector(".pwd-toggle");
+
+  const event = new window.Event("mousedown", { bubbles: true, cancelable: true });
+  toggle.dispatchEvent(event);
+  assert.ok(event.defaultPrevented,
+    "mousedown was not prevented, so focus leaves the field and the blur handler fights the click");
+});
+
 test("login.html: a revealed password re-hides on blur", async () => {
   const window = await loadPage("login.html");
   const input = window.document.getElementById("password");
@@ -165,6 +203,9 @@ test("login.html: a revealed password re-hides on blur", async () => {
   toggle.dispatchEvent(new window.Event("click", { bubbles: true }));
   assert.equal(input.type, "text");
   input.dispatchEvent(new window.Event("blur"));
+  // The re-hide is deferred by a tick so focus moving to the toggle itself
+  // does not count as leaving the field.
+  await new Promise((r) => setTimeout(r, 20));
   assert.equal(input.type, "password", "password left visible after losing focus");
 });
 
@@ -286,6 +327,112 @@ test("analyst, who cannot read report text, loses the feed", async () => {
   const tabs = visibleTabs(window);
   assert.ok(!tabs.includes("feed"), "analyst can open a feed of text they cannot read");
   assert.ok(!tabs.includes("critical"));
+});
+
+/* ---------------- search and date filtering ---------------- */
+
+async function dashboardWithCapture() {
+  const calls = [];
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        submissions: async (query) => {
+          calls.push(query || {});
+          return { count: 0, submissions: [], filters: query || {} };
+        }
+      }
+    }
+  });
+  return { window, calls };
+}
+
+test("typing a search sends it to the API", async () => {
+  const { window, calls } = await dashboardWithCapture();
+  const before = calls.length;
+
+  const input = window.document.getElementById("searchInput");
+  input.value = "weekend manager";
+  input.dispatchEvent(new window.Event("keydown", { bubbles: true }));
+  // Enter bypasses the debounce.
+  const enter = new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  input.dispatchEvent(enter);
+  await new Promise((r) => setTimeout(r, 80));
+
+  const withSearch = calls.slice(before).filter((c) => c.search === "weekend manager");
+  assert.ok(withSearch.length > 0, "search term never reached the API");
+});
+
+test("clearing the search removes the filter", async () => {
+  const { window, calls } = await dashboardWithCapture();
+  const input = window.document.getElementById("searchInput");
+
+  input.value = "harassment";
+  input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await new Promise((r) => setTimeout(r, 80));
+
+  window.document.getElementById("searchClear").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 80));
+
+  const last = calls[calls.length - 1];
+  assert.equal(last.search, undefined, "search filter survived being cleared");
+});
+
+test("the date range actually filters instead of just reloading", async () => {
+  const { window, calls } = await dashboardWithCapture();
+  const select = window.document.getElementById("dateRange");
+
+  select.value = "7";
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 80));
+
+  const last = calls[calls.length - 1];
+  assert.equal(last.days, "7", "date range did not reach the API");
+});
+
+test("custom range only filters once both dates are set", async () => {
+  const { window, calls } = await dashboardWithCapture();
+  const select = window.document.getElementById("dateRange");
+
+  select.value = "custom";
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.ok(window.document.getElementById("customRange").classList.contains("show"),
+    "custom date inputs stayed hidden");
+
+  const countAfterCustom = calls.length;
+  const from = window.document.getElementById("dateFrom");
+  from.value = "2026-07-01";
+  from.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(calls.length, countAfterCustom, "filtered on a half-entered range");
+
+  const to = window.document.getElementById("dateTo");
+  to.value = "2026-07-31";
+  to.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 80));
+
+  const last = calls[calls.length - 1];
+  assert.equal(last.from, "2026-07-01");
+  assert.equal(last.to, "2026-07-31");
+});
+
+test("a filtered view says so, so it is not mistaken for a quiet week", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        submissions: async () => ({ count: 0, submissions: [], filters: { search: "zzz", days: "7" } })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 60));
+
+  const note = window.document.getElementById("resultNote").textContent;
+  assert.match(note, /zzz/, "the note does not say what was searched for");
+  assert.match(note, /nothing matches/i, "an empty result gave no explanation");
 });
 
 /* ---------------- escaping ---------------- */

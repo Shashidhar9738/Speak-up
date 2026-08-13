@@ -70,8 +70,10 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 .footer-note a { color:#cbd5e1; }
 
 /* PASSWORD REVEAL */
-.pwd-wrap { position: relative; }
-.pwd-wrap input { padding-right: 42px !important; width: 100%; }
+/* The wrapper is a span, so it must be told to fill the row — left inline it
+   shrink-wraps and the input's width:100% collapses against it. */
+.pwd-wrap { position: relative; display: block; width: 100%; }
+.pwd-wrap input { padding-right: 42px !important; width: 100%; display: block; }
 .pwd-toggle {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   background: none; border: 0; cursor: pointer; padding: 6px 8px;
@@ -309,21 +311,33 @@ document.getElementById('checkBtn').addEventListener('click', async function () 
     button.setAttribute('aria-label', 'Show password');
     button.innerHTML = '<i class="ti ti-eye"></i>';
 
+    var icon = button.querySelector('i');
+
+    function setRevealed(revealed) {
+      input.type = revealed ? 'text' : 'password';
+      // Swap the class rather than rebuilding innerHTML: the element survives,
+      // so there is nothing to lose mid-toggle.
+      icon.className = revealed ? 'ti ti-eye-off' : 'ti ti-eye';
+      button.setAttribute('aria-label', revealed ? 'Hide password' : 'Show password');
+    }
+
+    // Without this the input blurs the instant the button is pressed, which
+    // fires the blur handler below and undoes the click before it happens.
+    button.addEventListener('mousedown', function (event) { event.preventDefault(); });
+
     button.addEventListener('click', function () {
-      var showing = input.type === 'text';
-      input.type = showing ? 'password' : 'text';
-      button.innerHTML = showing ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>';
-      button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      setRevealed(input.type === 'password');
       input.focus();
     });
 
-    // Never leave a password on screen after the user moves on.
+    // Never leave a password on screen after the user moves on. Focus moving to
+    // the toggle itself does not count as moving on.
     input.addEventListener('blur', function () {
-      if (input.type === 'text') {
-        input.type = 'password';
-        button.innerHTML = '<i class="ti ti-eye"></i>';
-        button.setAttribute('aria-label', 'Show password');
-      }
+      setTimeout(function () {
+        if (document.activeElement !== button && input.type === 'text') {
+          setRevealed(false);
+        }
+      }, 0);
     });
 
     wrap.appendChild(button);

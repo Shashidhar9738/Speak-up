@@ -183,6 +183,47 @@ body {
 .card-title i { color: var(--accent); font-size: 17px; }
 .card-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
 
+/* SEARCH BAR */
+.searchbar { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.search-wrap { position: relative; flex: 1; min-width: 240px; }
+.search-wrap > i {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); font-size: 16px; pointer-events: none;
+}
+#searchInput {
+  width: 100%; font-family: var(--font); font-size: 13.5px; color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 34px 10px 36px; background: var(--card); box-shadow: var(--shadow);
+}
+#searchInput:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79,70,229,.12); }
+.search-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; cursor: pointer; color: var(--text-muted);
+  font-size: 16px; padding: 4px 6px; border-radius: 6px; display: none;
+}
+.search-clear:hover { color: var(--text); background: var(--border-soft); }
+.search-clear.show { display: block; }
+
+.custom-range { display: none; gap: 7px; align-items: center; }
+.custom-range.show { display: flex; }
+.custom-range input[type=date] {
+  font-family: var(--font); font-size: 12.5px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--card); color: var(--text);
+}
+.range-sep { font-size: 12px; color: var(--text-muted); }
+
+.result-note {
+  font-size: 12.5px; color: var(--text-sec); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.result-note strong { color: var(--text); font-weight: 600; }
+.filter-pill {
+  font-size: 11.5px; background: var(--accent-light); color: var(--accent);
+  padding: 3px 10px; border-radius: 20px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.filter-pill button { background: none; border: 0; cursor: pointer; color: inherit; font-size: 13px; line-height: 1; padding: 0; }
+
 /* STAFF HEADER — deliberately calmer than the leadership briefing. Someone who
    cannot act on a report should not be shown an action queue. */
 .staff-band {
@@ -496,8 +537,10 @@ body {
 
 
 /* PASSWORD REVEAL */
-.pwd-wrap { position: relative; }
-.pwd-wrap input { padding-right: 42px !important; width: 100%; }
+/* The wrapper is a span, so it must be told to fill the row — left inline it
+   shrink-wraps and the input's width:100% collapses against it. */
+.pwd-wrap { position: relative; display: block; width: 100%; }
+.pwd-wrap input { padding-right: 42px !important; width: 100%; display: block; }
 .pwd-toggle {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   background: none; border: 0; cursor: pointer; padding: 6px 8px;
@@ -562,11 +605,17 @@ body {
         <option value="recent">Sort: most recent</option>
       </select>
       <select class="date-filter" id="dateRange">
-        <option>Last 30 days</option>
-        <option>Last 7 days</option>
-        <option>Last 90 days</option>
-        <option>All time</option>
+        <option value="30">Last 30 days</option>
+        <option value="7">Last 7 days</option>
+        <option value="90">Last 90 days</option>
+        <option value="">All time</option>
+        <option value="custom">Custom range…</option>
       </select>
+      <span class="custom-range" id="customRange">
+        <input type="date" id="dateFrom" aria-label="From date">
+        <span class="range-sep">to</span>
+        <input type="date" id="dateTo" aria-label="To date">
+      </span>
     </div>
   </div>
 
@@ -657,6 +706,14 @@ body {
 
   <!-- FEED -->
   <div class="panel" id="panel-feed">
+    <div class="searchbar">
+      <span class="search-wrap">
+        <i class="ti ti-search"></i>
+        <input type="search" id="searchInput" placeholder="Search reports — try: weekend manager, or &quot;work late&quot;">
+        <button class="search-clear" id="searchClear" aria-label="Clear search">&times;</button>
+      </span>
+    </div>
+    <div class="result-note" id="resultNote"></div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="feedFilters"></div>
     <div id="allFeed"></div>
   </div>
@@ -866,7 +923,7 @@ function isoWeek(iso) {
 }
 
 // Shared state
-const state = { metrics:null, submissions:[], alerts:[], filters:{}, charts:{}, scope:{} };
+const state = { metrics:null, submissions:[], alerts:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
 
 function setBusy(isBusy) {
   document.body.style.cursor = isBusy ? 'progress' : '';
@@ -1649,6 +1706,8 @@ async function loadAll(options) {
     const metrics = metricsResult.metrics;
     state.metrics = metrics;
     state.submissions = submissionsResult.submissions || [];
+    state.unfilteredTotal = state.unfilteredTotal || submissionsResult.count;
+    renderResultNote(submissionsResult.count, state.unfilteredTotal, submissionsResult.filters || {});
     state.alerts = alertsResult.alerts || [];
 
     const total = (metrics.totals && metrics.totals.submissions) || 0;
@@ -1932,6 +1991,112 @@ function renderStaffBand(metrics, scope) {
     '</div>';
 }
 
+
+/* ----------------------------- SEARCH & DATES ----------------------------- */
+
+// Typing fires a request per keystroke without this; 300ms is long enough to
+// finish a word and short enough to feel immediate.
+function debounce(fn, wait) {
+  var timer = null;
+  return function () {
+    var args = arguments;
+    clearTimeout(timer);
+    timer = setTimeout(function () { fn.apply(null, args); }, wait);
+  };
+}
+
+function applySearch() {
+  var value = document.getElementById('searchInput').value.trim();
+  document.getElementById('searchClear').classList.toggle('show', Boolean(value));
+  if (value) { state.filters.search = value; } else { delete state.filters.search; }
+  loadAll();
+}
+
+document.getElementById('searchInput').addEventListener('input', debounce(applySearch, 300));
+
+// Enter searches immediately rather than waiting out the debounce.
+document.getElementById('searchInput').addEventListener('keydown', function (event) {
+  if (event.key === 'Enter') { event.preventDefault(); applySearch(); }
+});
+
+document.getElementById('searchClear').addEventListener('click', function () {
+  document.getElementById('searchInput').value = '';
+  applySearch();
+});
+
+function applyDateRange() {
+  var value = document.getElementById('dateRange').value;
+  var custom = document.getElementById('customRange');
+
+  delete state.filters.days;
+  delete state.filters.from;
+  delete state.filters.to;
+
+  if (value === 'custom') {
+    custom.classList.add('show');
+    var from = document.getElementById('dateFrom').value;
+    var to = document.getElementById('dateTo').value;
+    // Wait for both ends before filtering; one date alone is usually mid-edit.
+    if (!from || !to) { return; }
+    state.filters.from = from;
+    state.filters.to = to;
+  } else {
+    custom.classList.remove('show');
+    if (value) { state.filters.days = value; }
+  }
+  loadAll();
+}
+
+document.getElementById('dateRange').addEventListener('change', applyDateRange);
+document.getElementById('dateFrom').addEventListener('change', applyDateRange);
+document.getElementById('dateTo').addEventListener('change', applyDateRange);
+
+/**
+ * States what is on screen and why. Without this a filtered view looks
+ * identical to a quiet week.
+ */
+function renderResultNote(count, total, filters) {
+  var host = document.getElementById('resultNote');
+  if (!host) { return; }
+
+  var pills = [];
+  if (filters.search) {
+    pills.push({ key: 'search', label: 'matching "' + filters.search + '"' });
+  }
+  if (filters.days) {
+    pills.push({ key: 'days', label: 'last ' + filters.days + ' days' });
+  }
+  if (filters.from && filters.to) {
+    pills.push({ key: 'range', label: filters.from + ' to ' + filters.to });
+  }
+
+  if (!pills.length) {
+    host.innerHTML = '<span><strong>' + esc(count) + '</strong> report' + (count === 1 ? '' : 's') + '</span>';
+    return;
+  }
+
+  host.innerHTML =
+    '<span>Showing <strong>' + esc(count) + '</strong> of ' + esc(total) + '</span>' +
+    pills.map(function (p) {
+      return '<span class="filter-pill">' + esc(p.label) +
+             '<button data-clear="' + p.key + '" aria-label="Remove filter">&times;</button></span>';
+    }).join('') +
+    (count === 0 ? '<span style="color:var(--text-muted);">— nothing matches, try fewer words</span>' : '');
+
+  host.querySelectorAll('button[data-clear]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var key = button.getAttribute('data-clear');
+      if (key === 'search') {
+        document.getElementById('searchInput').value = '';
+        applySearch();
+      } else {
+        document.getElementById('dateRange').value = '';
+        applyDateRange();
+      }
+    });
+  });
+}
+
 /* ----------------------------- SESSION ----------------------------- */
 
 document.getElementById('logoutBtn').addEventListener('click', async function (event) {
@@ -2048,10 +2213,6 @@ document.getElementById('exportBtn').addEventListener('click', async function (e
 
 // The date filter is presentational until the API supports a date range, so it
 // drives the status filter instead of silently doing nothing.
-document.getElementById('dateRange').addEventListener('change', function () {
-  loadAll();
-});
-
 document.getElementById('sortBy').addEventListener('change', function () {
   state.filters.sort = this.value;
   loadAll();
@@ -2130,21 +2291,33 @@ document.getElementById('sortBy').addEventListener('change', function () {
     button.setAttribute('aria-label', 'Show password');
     button.innerHTML = '<i class="ti ti-eye"></i>';
 
+    var icon = button.querySelector('i');
+
+    function setRevealed(revealed) {
+      input.type = revealed ? 'text' : 'password';
+      // Swap the class rather than rebuilding innerHTML: the element survives,
+      // so there is nothing to lose mid-toggle.
+      icon.className = revealed ? 'ti ti-eye-off' : 'ti ti-eye';
+      button.setAttribute('aria-label', revealed ? 'Hide password' : 'Show password');
+    }
+
+    // Without this the input blurs the instant the button is pressed, which
+    // fires the blur handler below and undoes the click before it happens.
+    button.addEventListener('mousedown', function (event) { event.preventDefault(); });
+
     button.addEventListener('click', function () {
-      var showing = input.type === 'text';
-      input.type = showing ? 'password' : 'text';
-      button.innerHTML = showing ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>';
-      button.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      setRevealed(input.type === 'password');
       input.focus();
     });
 
-    // Never leave a password on screen after the user moves on.
+    // Never leave a password on screen after the user moves on. Focus moving to
+    // the toggle itself does not count as moving on.
     input.addEventListener('blur', function () {
-      if (input.type === 'text') {
-        input.type = 'password';
-        button.innerHTML = '<i class="ti ti-eye"></i>';
-        button.setAttribute('aria-label', 'Show password');
-      }
+      setTimeout(function () {
+        if (document.activeElement !== button && input.type === 'text') {
+          setRevealed(false);
+        }
+      }, 0);
     });
 
     wrap.appendChild(button);

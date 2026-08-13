@@ -58,17 +58,83 @@ function applyCors(request, response, next) {
   return next();
 }
 
+/**
+ * Resolves a date range from the query.
+ *
+ * Accepts either an explicit from/to (YYYY-MM-DD) or a relative window
+ * (?days=30), which is what the dashboard's range picker sends. "to" is
+ * pushed to the end of its day so a same-day from/to is not an empty range —
+ * an easy way to make a filter look broken.
+ */
+function resolveDateRange(query) {
+  const days = Number.parseInt(query.days, 10);
+  if (Number.isFinite(days) && days > 0) {
+    return { from: Date.now() - days * 86400000, to: Infinity, label: `last ${days} days` };
+  }
+
+  let from = -Infinity;
+  let to = Infinity;
+
+  if (query.from) {
+    const parsed = Date.parse(String(query.from));
+    if (!Number.isNaN(parsed)) { from = parsed; }
+  }
+  if (query.to) {
+    const parsed = Date.parse(String(query.to));
+    if (!Number.isNaN(parsed)) {
+      to = /T/.test(String(query.to)) ? parsed : parsed + 86399999;
+    }
+  }
+
+  return { from, to, label: null };
+}
+
+/**
+ * Search across a submission's text, summary, category, department and ticket
+ * id. Terms are AND-ed, so "sales weekend" finds reports mentioning both —
+ * substring matching on the raw phrase would find neither unless they happened
+ * to sit next to each other. A quoted "phrase" is matched literally.
+ */
+function matchesSearch(submission, rawQuery) {
+  const haystack = [
+    submission.messageText, submission.summary, submission.category,
+    submission.department, submission.region, submission.id,
+    (submission.keywords || []).join(" ")
+  ].join(" ").toLowerCase();
+
+  const query = String(rawQuery).toLowerCase().trim();
+  const phrases = [];
+  const remainder = query.replace(/"([^"]+)"/g, (_, phrase) => {
+    phrases.push(phrase.trim());
+    return " ";
+  });
+
+  for (const phrase of phrases) {
+    if (phrase && !haystack.includes(phrase)) { return false; }
+  }
+
+  const terms = remainder.split(/\s+/).filter(Boolean);
+  return terms.every((term) => haystack.includes(term));
+}
+
 function filterSubmissions(submissions, query) {
   // Spam is excluded from every dashboard, metric and export by default so it
   // cannot inflate counts or pollute the word cloud. ?includeSpam=true opts in
   // for a review queue.
   const includeSpam = String(query.includeSpam || "").toLowerCase() === "true";
+  const range = resolveDateRange(query);
 
   return submissions.filter((submission) => {
     const isSpam = submission.quarantined === true || submission.flags?.spam === true;
     if (isSpam && !includeSpam) {
       return false;
     }
+
+    const created = new Date(submission.createdAt).getTime();
+    if (created < range.from || created > range.to) {
+      return false;
+    }
+
     if (query.status && submission.status !== query.status) {
       return false;
     }
@@ -84,15 +150,13 @@ function filterSubmissions(submissions, query) {
     if (query.priority && submission.priority !== query.priority) {
       return false;
     }
-    if (query.search) {
-      const haystack = `${submission.messageText} ${submission.summary} ${submission.category}`.toLowerCase();
-      if (!haystack.includes(String(query.search).toLowerCase())) {
-        return false;
-      }
+    if (query.search && !matchesSearch(submission, query.search)) {
+      return false;
     }
     return true;
   });
 }
+
 
 // Submission text is attacker-controlled and this export is opened in Excel by
 // leadership, so a leading =, +, - or @ would be evaluated as a formula. Prefix
@@ -776,6 +840,18 @@ app.get("/api/dashboard/submissions", requireAdmin, async (request, response) =>
     count: filtered.length,
     limit,
     sort,
+    // Echoed back so the page can state what it is showing rather than
+    // guessing from its own inputs.
+    filters: {
+      search: request.query.search || null,
+      days: request.query.days || null,
+      from: request.query.from || null,
+      to: request.query.to || null,
+      status: request.query.status || null,
+      category: request.query.category || null,
+      priority: request.query.priority || null,
+      department: request.query.department || null
+    },
     submissions: page.map((item) => redact(request.user, item))
   });
 });
