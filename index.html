@@ -650,6 +650,9 @@ body {
 
   <!-- TRENDS -->
   <div class="panel" id="panel-recognition">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+      <button class="action-btn resolve" id="digestBtn"><i class="ti ti-mail"></i> Open weekly digest</button>
+    </div>
     <div class="kud-grid" id="kudStats"></div>
     <div id="kudGap"></div>
 
@@ -1672,6 +1675,27 @@ function kudCat(id) {
   return kudState.categories.find(function (c) { return c.id === id; }) ||
          { label: id, colour: '#64748b', icon: 'ti-star' };
 }
+
+// The digest opens in a tab: it is email-ready HTML meant to be copied into a
+// message, not another panel to read inside the dashboard.
+document.getElementById('digestBtn').addEventListener('click', async function () {
+  if (window.SPEAKUP_DEMO) {
+    alert('The digest needs the backend, which the demo does not have.');
+    return;
+  }
+  var button = this;
+  button.disabled = true;
+  try {
+    var blob = await SpeakUpApi.brightSpotsHtml(7);
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  } catch (error) {
+    alert(error.message || 'Could not generate the digest.');
+  } finally {
+    button.disabled = false;
+  }
+});
 
 async function loadRecognition() {
   var host = document.getElementById('kudFeed');

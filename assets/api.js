@@ -218,6 +218,18 @@
       return request("/api/appreciations/" + encodeURIComponent(id) + "/acknowledge", { method: "POST", auth: true });
     },
 
+    // Returned as a Blob so the caller can open it in a tab; the digest is
+    // email-ready HTML rather than JSON meant for rendering.
+    brightSpotsHtml: async function (days) {
+      var response = await fetch(baseUrl() + "/api/export/brightspots?format=html&days=" + (days || 7), {
+        headers: { Authorization: "Bearer " + getToken() }
+      });
+      if (!response.ok) {
+        throw ApiError("Digest failed (" + response.status + ")", response.status);
+      }
+      return new Blob([await response.text()], { type: "text/html" });
+    },
+
     setSpotlight: function (id, on) {
       return request("/api/admin/spotlights/" + encodeURIComponent(id), {
         method: "POST", auth: true, body: { spotlight: on !== false }
