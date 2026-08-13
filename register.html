@@ -149,14 +149,31 @@ button:disabled { opacity:.55; cursor:not-allowed; }
   </div>
 
   <div class="footer-note">
-    Already have an account? <a href="login.html">Sign in</a><br>
+    <span id="sessionNote">Already have an account? <a href="login.html">Sign in</a></span><br>
     <a href="submit.html">Or share something anonymously</a>
   </div>
 </div>
 
 <script src="assets/api.js"></script>
+<script src="assets/demo-mode.js"></script>
 <script>
 var email = '';
+
+// Someone already signed in has no reason to register; say so rather than
+// offering them a sign-in link they do not need.
+(async function reflectSession() {
+  if (window.SPEAKUP_DEMO_READY) { await window.SPEAKUP_DEMO_READY; }
+  if (!SpeakUpApi.isSignedIn()) { return; }
+  try {
+    await SpeakUpApi.me();
+    var note = document.getElementById('sessionNote');
+    if (note) {
+      note.innerHTML = 'You are already signed in. <a href="index.html">Go to the dashboard</a>';
+    }
+  } catch (error) {
+    /* stale token — leave the sign-in link */
+  }
+})();
 
 function show(step) {
   [1, 2, 3].forEach(function (n) {

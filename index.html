@@ -599,6 +599,7 @@ body {
 <style>@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }</style>
 
 <script src="assets/api.js"></script>
+<script src="assets/demo-mode.js"></script>
 <script>
 // MOCK DATA (retained only as the empty-state reference; nothing below reads it)
 /* ---------------------------------------------------------------------------
@@ -1564,6 +1565,10 @@ document.getElementById('sortBy').addEventListener('change', function () {
 
 /* ----------------------------- BOOT ----------------------------- */
 (async function boot() {
+  // Wait for the backend probe: without it the page redirects to login before
+  // demo mode has installed.
+  if (window.SPEAKUP_DEMO_READY) { await window.SPEAKUP_DEMO_READY; }
+
   if (!SpeakUpApi.isSignedIn()) {
     location.href = 'login.html';
     return;

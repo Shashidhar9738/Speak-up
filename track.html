@@ -91,7 +91,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
   <div style="margin-top:22px;">
     <div class="nav-label">Leadership</div>
-    <a class="nav-item" href="login.html"><i class="ti ti-lock"></i> Sign in</a>
+    <a class="nav-item" id="leadershipLink" href="login.html"><i class="ti ti-lock"></i> <span id="leadershipText">Sign in</span></a>
   </div>
 
   <div class="sidebar-note">
@@ -176,7 +176,27 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 </div>
 
 <script src="assets/api.js"></script>
+<script src="assets/demo-mode.js"></script>
 <script>
+// Public page, but the sidebar should still reflect an existing session —
+// showing "Sign in" to someone already signed in reads as a broken link.
+(async function reflectSession() {
+  if (window.SPEAKUP_DEMO_READY) { await window.SPEAKUP_DEMO_READY; }
+  if (!SpeakUpApi.isSignedIn()) { return; }
+  try {
+    await SpeakUpApi.me();
+    var link = document.getElementById('leadershipLink');
+    var text = document.getElementById('leadershipText');
+    if (link && text) {
+      link.href = 'index.html';
+      text.textContent = 'Dashboard';
+      link.querySelector('i').className = 'ti ti-layout-dashboard';
+    }
+  } catch (error) {
+    /* stale or rejected token — leave the link as Sign in */
+  }
+})();
+
 var lookupForm = document.getElementById('lookupForm');
 var resultPanel = document.getElementById('result');
 var errorBox = document.getElementById('error');
