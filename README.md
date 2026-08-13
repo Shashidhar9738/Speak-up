@@ -168,7 +168,7 @@ the repo, because it names real people.
   cross the network in cleartext together with the submitter's IP — which
   defeats the anonymity the product promises. Render terminates TLS for you; set
   `SPEAKUP_BEHIND_TLS=true`.
-- Data lives in JSON files. Fine for a pilot; move to a database for real volume.
+- Data lives in a SQLite file (`backend/data/speakup.db`). Back it up by copying it.
 - Verification emails need SMTP. Without it, production refuses registration
   rather than falling back to showing codes on screen.
 
@@ -198,5 +198,30 @@ npm run build        # static bundle into dist/ (frontend only — no API)
 | `SPEAKUP_TOKEN_TTL_HOURS` | `12` | session lifetime |
 | `SPEAKUP_CORS_ORIGIN` | `*` dev / same-origin prod | allowed origin |
 | `SPEAKUP_BEHIND_TLS` | `false` | set when a proxy terminates HTTPS |
+| `SPEAKUP_DB_FILE` | `backend/data/speakup.db` | SQLite database |
+| `SPEAKUP_AUDIT_FILE` | `backend/data/audit.log` | append-only audit trail |
+| `SPEAKUP_REQUIRE_VERIFICATION` | `false` | `true` re-enables the email code on signup |
+
+## Storage
+
+SQLite, one file, no server. Six tables:
+
+| Table | Holds |
+|---|---|
+| `submissions` | complaints; no column identifies the reporter, the access code is a hash |
+| `messages` | the two-way thread on a submission |
+| `users` | dashboard accounts; passwords are scrypt hashes |
+| `appreciations` | recognition; names the recipient, not the nominator |
+| `notifications` | in-app notices waiting for a reporter |
+| `rate_limits` | request counters, persisted so a restart does not reset them |
+
+The **audit trail is deliberately not a table**. It is an append-only text file
+at `backend/data/audit.log`, never served over HTTP and never shown in the UI:
+a trail the app can rewrite is not a trail, and one readable from the dashboard
+tells a curious admin who else has been reading which complaints.
+
+```bash
+node backend/scripts/migrate-json-to-sqlite.js   # one-off, safe to re-run
+```
 
 Full API inventory: `GET /api/todo/apis`, or see `API_TODO.md`.

@@ -29,6 +29,8 @@ const {
 } = require("./services/userService");
 const { validatePassword, hashPassword, MIN_LENGTH } = require("./services/passwordService");
 const appreciation = require("./services/appreciationService");
+const audit = require("./services/auditService");
+const notifications = require("./services/notificationService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -168,11 +170,13 @@ function buildApiInventory() {
 
 const app = express();
 const authRateLimiter = createRateLimiter({
+  name: "auth",
   windowMs: config.rateLimit.authWindowMs,
   maxRequests: config.rateLimit.authMaxRequests,
   message: "Too many authentication attempts. Please try again later."
 });
 const submissionRateLimiter = createRateLimiter({
+  name: "submit",
   windowMs: config.rateLimit.submissionWindowMs,
   maxRequests: config.rateLimit.submissionMaxRequests,
   message: "Too many submissions from this client. Please wait before trying again."
@@ -220,6 +224,7 @@ app.post("/api/auth/login", authRateLimiter, validateLoginRequest, async (reques
   }
 
   const token = createToken(email);
+  audit.record("auth.login", email, { role: verdict.role });
   return response.json({ token, email, role: verdict.role, expiresInHours: config.tokenTtlHours });
 });
 
@@ -385,6 +390,9 @@ app.post("/api/admin/users/:email/decision", requireAdmin, requireOwner, async (
     return next(createHttpError(404, "No such account"));
   }
 
+  audit.record("account." + decision, request.user.email, {
+    target, role: updated.role, status: updated.status
+  });
   return response.json({ user: publicUser(updated) });
 });
 
@@ -516,7 +524,11 @@ app.post("/api/track/:id", submissionRateLimiter, async (request, response, next
   const submission = result.submission;
   const editableUntil = new Date(submission.createdAt).getTime() + config.editWindowMinutes * 60 * 1000;
 
+  const notices = notifications.forSubmission(submission.id);
+  notifications.markRead(submission.id);
+
   return response.json({
+    notifications: notices,
     submission: {
       id: submission.id,
       status: submission.status,
@@ -660,6 +672,7 @@ app.get("/api/submissions/:id", requireAdmin, async (request, response) => {
   if (!submission || !canSeeSubmission(request.user, submission)) {
     return response.status(404).json({ error: "Submission not found" });
   }
+  audit.recordRead(request, [submission.id]);
   return response.json({ submission: redact(request.user, submission) });
 });
 
@@ -683,6 +696,13 @@ app.post("/api/submissions/:id/status", requireAdmin, validateStatusUpdateReques
   if (!updated) {
     return response.status(404).json({ error: "Submission not found" });
   }
+
+  audit.record("submission.status", request.user.email, {
+    id: updated.id, from: existing.status, to: status
+  });
+  // The reporter has no email, so the notice waits for them on the tracking
+  // page rather than being sent anywhere.
+  notifications.announceStatus(updated.id, status, request.validated.note);
 
   return response.json({ submission: publicSubmission(updated) });
 });
@@ -726,6 +746,11 @@ app.post("/api/submissions/:id/messages", requireAdmin, validateMessageRequest, 
     return response.status(404).json({ error: "Submission not found" });
   }
 
+  if (request.validated.authorType === "admin") {
+    audit.record("submission.reply", request.user.email, { id: updated.id });
+    notifications.announceReply(updated.id);
+  }
+
   return response.status(201).json({
     submissionId: updated.id,
     messages: updated.messages
@@ -742,11 +767,16 @@ app.get("/api/dashboard/submissions", requireAdmin, async (request, response) =>
       : comparePriority);
   const limit = parseLimit(request.query.limit);
 
+  const page = filtered.slice(0, limit);
+  // Reading complaints is the event worth recording: it is the moment someone
+  // could learn something about a colleague.
+  audit.recordRead(request, page.map((item) => item.id));
+
   return response.json({
     count: filtered.length,
     limit,
     sort,
-    submissions: filtered.slice(0, limit).map((item) => redact(request.user, item))
+    submissions: page.map((item) => redact(request.user, item))
   });
 });
 
@@ -807,6 +837,11 @@ app.get("/api/dashboard/export.csv", requireAdmin, async (request, response, nex
     return next(createHttpError(403, "Your role cannot export complaint data"));
   }
   const filtered = (await scopedSubmissions(request.user, request.query)).sort(comparePriority);
+  // An export takes complaint text out of the system entirely, so it is logged
+  // in full rather than as a count.
+  audit.record("export.csv", request.user.email, {
+    count: filtered.length, ids: filtered.map((item) => item.id).slice(0, 100)
+  });
   response.setHeader("Content-Type", "text/csv; charset=utf-8");
   response.setHeader("Content-Disposition", "attachment; filename=speakup-submissions.csv");
   return response.send(toCsv(filtered));

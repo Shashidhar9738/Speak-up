@@ -6,8 +6,9 @@
 node_modules/
 dist/
 
-# Runtime data — real complaints, employee email addresses, and appreciation
-# records that name individuals. None of it belongs in version control.
+# Runtime data — the SQLite database, the audit log, and the legacy JSON
+# stores. Real complaints, employee email addresses and appreciation records
+# that name individuals. None of it belongs in version control.
 backend/data/
 !backend/data/.gitkeep
 

@@ -1,4 +1,7 @@
 const os = require("os");
+const db = require("./services/db");
+const { sweep } = require("./middleware/rateLimitMiddleware");
+const audit = require("./services/auditService");
 const app = require("./app");
 const config = require("./config");
 
@@ -14,6 +17,11 @@ function localAddresses() {
   }
   return addresses;
 }
+
+// Fail at boot rather than on the first request if the database cannot open.
+db.open();
+sweep();
+audit.record("server.start", "system", { port: config.port, env: config.nodeEnv });
 
 app.listen(config.port, config.host, () => {
   console.log(`SpeakUp API listening on http://127.0.0.1:${config.port}`);
