@@ -1,77 +1,84 @@
 # SpeakUp API To-Do List
 
-Date: 2026-08-07
+Date: 2026-08-13
 
-## Implemented MVP APIs
+## Implemented (27)
 
-- [x] `GET /api/health`
-  Returns service health and timestamp.
+- [x] `GET /api/health`  
+  Health check
+- [x] `POST /api/auth/login`  
+  Allowlisted admin login
+- [x] `POST /api/auth/validate`  
+  Bearer token validation
+- [x] `POST /api/auth/logout`  
+  Client logout helper
+- [x] `POST /api/auth/register`  
+  Domain-restricted access request
+- [x] `POST /api/auth/verify`  
+  Email verification code exchange
+- [x] `GET /api/auth/registration-status`  
+  Registration state lookup
+- [x] `GET /api/admin/users`  
+  Owner-only account list
+- [x] `POST /api/admin/users/:email/decision`  
+  Owner-only approve/reject/revoke
+- [x] `GET /api/auth/me`  
+  Authenticated admin profile
+- [x] `POST /api/submissions`  
+  Anonymous submission intake with enrichment
+- [x] `GET /api/submissions/:id`  
+  Single submission detail
+- [x] `POST /api/submissions/:id/status`  
+  Status workflow update
+- [x] `GET /api/submissions/:id/messages`  
+  Submission message thread
+- [x] `POST /api/submissions/:id/messages`  
+  Append message thread item
+- [x] `POST /api/track/:id`  
+  Anonymous reporter status tracking via access code
+- [x] `POST /api/track/:id/messages`  
+  Anonymous reporter reply via access code
+- [x] `POST /api/track/:id/edit`  
+  Reporter edits own report inside the edit window
+- [x] `GET /api/priority-tiers`  
+  Keyword to priority mapping and colour codes
+- [x] `GET /api/dashboard/submissions`  
+  Filtered admin submission feed
+- [x] `GET /api/dashboard/metrics`  
+  Dashboard aggregate payload
+- [x] `GET /api/dashboard/categories`  
+  Category distribution payload
+- [x] `GET /api/dashboard/trends`  
+  Trend-only payload
+- [x] `GET /api/dashboard/heatmap`  
+  Department heatmap payload
+- [x] `GET /api/dashboard/alerts`  
+  High-priority alerts payload
+- [x] `GET /api/dashboard/export.csv`  
+  CSV export
+- [x] `GET /api/todo/apis`  
+  API inventory and backlog
 
-- [x] `POST /api/auth/login`
-  Accepts an allowlisted admin email and returns a signed bearer token.
+## Remaining Backlog (5)
 
-- [x] `POST /api/auth/validate`
-  Validates a bearer token supplied in the body or `Authorization` header.
+- [ ] `GET /api/dashboard/export.pdf`  
+  Leadership PDF export — Phase 2
+- [ ] `POST /api/auth/sso/callback`  
+  Enterprise SSO callback — Phase 3
+- [ ] `POST /api/integrations/hris/webhook`  
+  HRIS synchronization — Phase 3
+- [ ] `POST /api/submissions/:id/escalate`  
+  Compliance escalation workflow — Phase 3
+- [ ] `GET /api/compliance/audit-log`  
+  Compliance audit trail — Phase 3
 
-- [x] `GET /api/auth/me`
-  Returns the currently authenticated admin user.
+## Known gaps
 
-- [x] `POST /api/submissions`
-  Accepts anonymous employee submissions and enriches them with category, summary, keywords, sentiment, priority, and flags.
-
-- [x] `GET /api/submissions/:id`
-  Returns a single submission for authenticated admin users.
-
-- [x] `POST /api/submissions/:id/status`
-  Updates submission status to `open`, `acknowledged`, or `resolved`.
-
-- [x] `GET /api/dashboard/submissions`
-  Returns filtered admin submission list with query params:
-  `status`, `category`, `sentiment`, `department`, `priority`, `search`, `limit`.
-
-- [x] `GET /api/dashboard/metrics`
-  Returns dashboard aggregates including totals, status counts, sentiment counts, category counts, weekly trend, department heatmap, top keywords, priority issues, and latest submissions.
-
-- [x] `GET /api/dashboard/categories`
-  Returns category breakdown as a focused payload for dashboard widgets.
-
-- [x] `GET /api/dashboard/trends`
-  Returns trend-only weekly volume data.
-
-- [x] `GET /api/dashboard/heatmap`
-  Returns the department complaint density heatmap payload.
-
-- [x] `GET /api/dashboard/alerts`
-  Returns urgent and high-priority issue alerts.
-
-- [x] `GET /api/dashboard/export.csv`
-  Exports filtered submissions as CSV for admin download.
-
-- [x] `GET /api/submissions/:id/messages`
-  Returns the admin-visible message thread for a submission.
-
-- [x] `POST /api/submissions/:id/messages`
-  Appends a message to the submission thread.
-
-- [x] `POST /api/auth/logout`
-  Client-side logout helper endpoint.
-
-- [x] `GET /api/todo/apis`
-  Returns a machine-readable API inventory and backlog.
-
-## Remaining Backlog
-
-- [ ] `GET /api/dashboard/export.pdf`
-  PDF leadership export.
-
-- [ ] `POST /api/auth/sso/callback`
-  Enterprise SSO integration.
-
-- [ ] `POST /api/integrations/hris/webhook`
-  HRIS synchronization endpoint.
-
-- [ ] `POST /api/submissions/:id/escalate`
-  Compliance escalation workflow.
-
-- [ ] `GET /api/compliance/audit-log`
-  Audit trail for regulated deployments.
+- No HTTPS. Complaint text and session tokens cross the network in cleartext,
+  along with the submitter's IP. Required before real reporters use this.
+- No SMTP. Verification codes are shown on screen in development; production
+  refuses registration until email delivery is configured.
+- `summarize()` truncates at the first sentence boundary rather than
+  summarising. An extractive replacement is prototyped but not merged.
+- Data lives in JSON files, not a database.
+- No automated test suite in the repo.

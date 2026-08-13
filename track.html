@@ -60,6 +60,19 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .msg-reporter { background: #f3f4f6; border-left: 3px solid var(--text-muted); }
 .msg-who { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; }
 
+.prio-pill { font-size:11px; font-weight:700; padding:4px 11px; border-radius:20px; letter-spacing:.3px; }
+.sla { font-size:11px; color:var(--text-muted); }
+
+.edit-box { border:1px dashed var(--border); border-radius:10px; padding:14px; margin-bottom:18px; background:#fcfdff; }
+.edit-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+.edit-title { font-size:12.5px; font-weight:600; }
+.countdown { font-size:11px; color:var(--warning); font-weight:600; font-variant-numeric:tabular-nums; }
+.edit-closed { font-size:11.5px; color:var(--text-muted); line-height:1.5; }
+.btn-sm { font-size:12px; padding:8px 14px; width:auto; border-radius:7px; }
+.btn-outline { background:#fff; color:var(--accent); border:1px solid var(--border); }
+.btn-outline:hover:not(:disabled) { border-color:var(--accent); }
+.alert.ok { background:var(--success-light); color:#065f46; }
+
 .footer-note { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 20px; }
 .footer-note a { color: var(--text-sec); }
 </style>
@@ -113,7 +126,28 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
     <div class="result" id="result">
       <div class="status-row">
         <span class="status-pill" id="statusPill">—</span>
+        <span class="prio-pill" id="prioPill" style="display:none;"></span>
         <span class="meta" id="statusMeta"></span>
+      </div>
+
+      <div class="edit-box" id="editBox" style="display:none;">
+        <div class="edit-head">
+          <div class="edit-title">Need to correct something?</div>
+          <div class="countdown" id="countdown"></div>
+        </div>
+        <div id="editIdle">
+          <div class="edit-closed" id="editHint"></div>
+          <button type="button" class="btn-outline btn-sm" id="editBtn" style="margin-top:10px;">Edit my report</button>
+        </div>
+        <form id="editForm" style="display:none;">
+          <textarea id="editText" minlength="10" maxlength="5000"></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button type="submit" class="btn-primary btn-sm" id="saveBtn">Save changes</button>
+            <button type="button" class="btn-outline btn-sm" id="cancelBtn">Cancel</button>
+          </div>
+          <div class="alert error" id="editError"></div>
+        </form>
+        <div class="alert ok" id="editOk"></div>
       </div>
 
       <div class="summary">
@@ -181,20 +215,134 @@ function renderMessages(messages) {
   }).join('');
 }
 
+var PRIORITY_TINT = { P1: '#fdeeee', P2: '#fef6e7', P3: '#dbeafe' };
+var countdownTimer = null;
+
 function render(data) {
   var s = data.submission;
   var pill = document.getElementById('statusPill');
   pill.textContent = s.status;
   pill.className = 'status-pill status-' + s.status;
-  document.getElementById('statusMeta').textContent =
-    'Submitted ' + timeAgo(s.createdAt) + (s.statusNote ? ' — ' + s.statusNote : '');
+
+  // Colour and label come from the server's priority tiers, so the badge here
+  // always agrees with what leadership sees on their dashboard.
+  var prio = document.getElementById('prioPill');
+  if (s.priority) {
+    prio.textContent = s.priority + ' · ' + (s.priorityLabel || '').split(' — ')[0];
+    prio.style.background = PRIORITY_TINT[s.priority] || '#f1f5f9';
+    prio.style.color = s.priorityColour || '#64748b';
+    prio.style.display = '';
+  } else {
+    prio.style.display = 'none';
+  }
+
+  document.getElementById('statusMeta').innerHTML =
+    'Submitted ' + esc(timeAgo(s.createdAt)) +
+    (s.sla ? ' <span class="sla">· target ' + esc(s.sla) + '</span>' : '') +
+    (s.statusNote ? ' — ' + esc(s.statusNote) : '');
+
   document.getElementById('summaryText').textContent = s.summary;
   document.getElementById('tags').innerHTML =
-    [s.category, 'Priority ' + s.priority].concat(s.keywords || [])
+    [s.category].concat(s.keywords || [])
       .map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+
   renderMessages(data.messages || []);
+  setupEdit(data);
   resultPanel.classList.add('show');
 }
+
+function setupEdit(data) {
+  var box = document.getElementById('editBox');
+  var hint = document.getElementById('editHint');
+  var idle = document.getElementById('editIdle');
+  var form = document.getElementById('editForm');
+
+  box.style.display = '';
+  form.style.display = 'none';
+  idle.style.display = '';
+  document.getElementById('editOk').classList.remove('show');
+  document.getElementById('editText').value = data.submission.messageText || '';
+
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+
+  if (!data.canEdit) {
+    document.getElementById('editBtn').style.display = 'none';
+    document.getElementById('countdown').textContent = '';
+    hint.textContent = data.submission.status !== 'open'
+      ? 'This report has already been reviewed, so the text is now fixed.'
+      : 'The ' + data.editWindowMinutes + '-minute edit window has closed. You can still reply below.';
+    return;
+  }
+
+  document.getElementById('editBtn').style.display = '';
+  hint.textContent = 'You can correct the wording for a short while after submitting.';
+
+  // A visible countdown is fairer than a window that silently expires.
+  var deadline = new Date(data.editableUntil).getTime();
+  function tick() {
+    var left = deadline - Date.now();
+    var node = document.getElementById('countdown');
+    if (left <= 0) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      node.textContent = 'window closed';
+      document.getElementById('editBtn').style.display = 'none';
+      form.style.display = 'none';
+      idle.style.display = '';
+      hint.textContent = 'The edit window has closed. You can still reply below.';
+      return;
+    }
+    var mins = Math.floor(left / 60000);
+    var secs = Math.floor((left % 60000) / 1000);
+    node.textContent = mins + ':' + String(secs).padStart(2, '0') + ' left to edit';
+  }
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+document.getElementById('editBtn').addEventListener('click', function () {
+  document.getElementById('editIdle').style.display = 'none';
+  document.getElementById('editForm').style.display = '';
+  document.getElementById('editText').focus();
+});
+
+document.getElementById('cancelBtn').addEventListener('click', function () {
+  document.getElementById('editForm').style.display = 'none';
+  document.getElementById('editIdle').style.display = '';
+  document.getElementById('editError').classList.remove('show');
+});
+
+document.getElementById('editForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('editError');
+  errorBox.classList.remove('show');
+
+  var text = document.getElementById('editText').value.trim();
+  if (text.length < 10) {
+    errorBox.textContent = 'Please write at least 10 characters.';
+    errorBox.classList.add('show');
+    return;
+  }
+
+  var button = document.getElementById('saveBtn');
+  button.disabled = true;
+  button.textContent = 'Saving…';
+
+  try {
+    await SpeakUpApi.trackEdit(current.id, current.code, text);
+    var fresh = await SpeakUpApi.track(current.id, current.code);
+    render(fresh);
+    var ok = document.getElementById('editOk');
+    ok.textContent = 'Updated. Your report was re-analysed with the new text.';
+    ok.classList.add('show');
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not save the change.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Save changes';
+  }
+});
 
 lookupForm.addEventListener('submit', async function (event) {
   event.preventDefault();

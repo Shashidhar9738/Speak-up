@@ -400,6 +400,10 @@ body {
     <div class="header-actions">
       <span class="header-badge live"><span style="width:6px;height:6px;border-radius:50%;background:var(--danger);display:inline-block;animation:pulse 1.5s infinite;"></span> Live</span>
       <span class="header-badge secure"><i class="ti ti-shield-check" style="font-size:14px;"></i> Secure session</span>
+      <select class="date-filter" id="sortBy" title="Feed ordering">
+        <option value="priority">Sort: priority first</option>
+        <option value="recent">Sort: most recent</option>
+      </select>
       <select class="date-filter" id="dateRange">
         <option>Last 30 days</option>
         <option>Last 7 days</option>
@@ -558,6 +562,14 @@ CATEGORY_ORDER.forEach(function (name, index) {
 
 // Status is a reserved semantic scale, never reused for a data series.
 const STATUS_COLOR = { open: '#dc2626', acknowledged: '#d97706', resolved: '#059669' };
+
+// Filled from GET /api/priority-tiers at boot; these are the fallback values.
+var PRIORITY_STYLE = {
+  P1: { colour: '#dc2626', tint: '#fdeeee', label: 'Critical', sla: '24 hours' },
+  P2: { colour: '#d97706', tint: '#fef6e7', label: 'High', sla: '5 working days' },
+  P3: { colour: '#2a78d6', tint: '#dbeafe', label: 'Normal', sla: '30 days' }
+};
+function prioStyle(p) { return PRIORITY_STYLE[p] || { colour: '#64748b', tint: '#f1f5f9', label: p || '—', sla: '' }; }
 
 const INK = '#6b7280';
 const GRID = '#f3f4f6';
@@ -961,11 +973,12 @@ function complaintCard(submission) {
   const sentiment = SENTIMENT_CLASS[submission.sentiment] || 'neu';
   const keywords = (submission.keywords || []).slice(0, 5);
   return `
-    <div class="complaint-card ${sentiment}" data-id="${esc(submission.id)}" style="border-left-color:${style.color};">
+    <div class="complaint-card ${sentiment}" data-id="${esc(submission.id)}" style="border-left-color:${prioStyle(submission.priority).colour};">
       <div class="complaint-text">${submission.redacted
         ? '<span style="color:var(--text-muted);font-style:italic;">Complaint text hidden for your role</span>'
         : '"' + esc(submission.messageText || submission.summary) + '"'}</div>
       <div class="complaint-meta">
+        <span class="phrase-tag" title="${esc(submission.priorityReason || '')}" style="background:${prioStyle(submission.priority).tint};color:${prioStyle(submission.priority).colour};font-weight:700;">${esc(submission.priority)} ${esc(prioStyle(submission.priority).label)}</span>
         <span class="phrase-tag" style="background:${style.bg};color:${style.color};font-weight:600;">${esc(submission.category)}</span>
         ${keywords.map(k => `<span class="phrase-tag" style="background:${style.bg};color:${style.color};">${esc(k)}</span>`).join('')}
         <span class="phrase-tag" style="background:#f3f4f6;color:#6b7280;">${esc(submission.department)}</span>
@@ -1146,11 +1159,12 @@ function renderCritical(alerts) {
     return `<div class="priority-item" data-id="${esc(a.id)}">
       <span class="p-badge ${esc((a.priority || 'p3').toLowerCase())}">${esc(a.priority)}</span>
       <div class="p-content">
-        <div class="p-title">${esc(a.category)} — ${esc(a.department)}</div>
+        <div class="p-title">${esc(a.id)} &middot; ${esc(a.category)} — ${esc(a.department)}</div>
         <div class="p-desc">${esc(a.summary)}</div>
+        ${a.priorityReason ? `<div class="p-desc" style="color:${prioStyle(a.priority).colour};font-size:11.5px;margin-top:5px;"><i class="ti ti-alert-circle" style="font-size:12px;"></i> ${esc(a.priorityReason)}</div>` : ''}
       </div>
       <div class="p-stats">
-        <div class="p-count">score ${esc(a.priorityScore)}</div>
+        <div class="p-count">${esc(a.sla || '')}</div>
         <div class="p-days">${esc(openedDays)}d open</div>
       </div>
       <div class="p-actions">
@@ -1165,9 +1179,40 @@ function renderCritical(alerts) {
 function renderFeedFilters(categoryCounts) {
   const names = ['All'].concat(Object.keys(categoryCounts).sort());
   const container = document.getElementById('feedFilters');
-  container.innerHTML = names.map((name, i) =>
-    `<button class="action-btn ${i === 0 ? 'resolve' : 'ack'}" data-filter="${esc(name)}" style="font-size:12px;">${esc(name)}</button>`
-  ).join('');
+
+  // Priority chips first — triage is the primary way into this list.
+  const prioChips = ['P1', 'P2', 'P3'].map(function (p) {
+    const st = prioStyle(p);
+    const n = state.submissions.filter(function (x) { return x.priority === p; }).length;
+    return `<button class="action-btn" data-prio="${p}"
+      style="font-size:12px;background:${st.tint};color:${st.colour};border-color:${st.colour}33;font-weight:700;">
+      ${p} ${esc(st.label)} (${n})</button>`;
+  }).join('');
+
+  container.innerHTML =
+    prioChips +
+    '<span style="width:1px;height:22px;background:var(--border);margin:0 4px;"></span>' +
+    names.map((name, i) =>
+      `<button class="action-btn ${i === 0 ? 'resolve' : 'ack'}" data-filter="${esc(name)}" style="font-size:12px;">${esc(name)}</button>`
+    ).join('');
+
+  container.querySelectorAll('button[data-prio]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const p = button.getAttribute('data-prio');
+      const active = button.dataset.on === '1';
+      container.querySelectorAll('button[data-prio]').forEach(function (b) {
+        b.dataset.on = '0';
+        b.style.outline = '';
+      });
+      if (active) {
+        renderComplaints('allFeed', state.submissions);
+      } else {
+        button.dataset.on = '1';
+        button.style.outline = '2px solid ' + prioStyle(p).colour;
+        renderComplaints('allFeed', state.submissions.filter(function (x) { return x.priority === p; }));
+      }
+    });
+  });
 
   container.querySelectorAll('button[data-filter]').forEach(button => {
     button.addEventListener('click', () => {
@@ -1306,6 +1351,11 @@ document.getElementById('dateRange').addEventListener('change', function () {
   loadAll();
 });
 
+document.getElementById('sortBy').addEventListener('change', function () {
+  state.filters.sort = this.value;
+  loadAll();
+});
+
 /* ----------------------------- BOOT ----------------------------- */
 (async function boot() {
   if (!SpeakUpApi.isSignedIn()) {
@@ -1335,6 +1385,21 @@ document.getElementById('dateRange').addEventListener('change', function () {
       '<div style="font-size:12px;color:var(--text-sec);margin-top:2px;">Scoped to ' +
       state.scope.departments.join(', ') + '</div>');
   }
+  // Pull the authoritative colour/label/SLA map before the first render.
+  try {
+    const tiers = await SpeakUpApi.priorityTiers();
+    (tiers.tiers || []).forEach(function (t) {
+      PRIORITY_STYLE[t.priority] = {
+        colour: t.colour,
+        tint: t.colourLight,
+        label: (t.label || '').split(' — ')[0],
+        sla: t.sla
+      };
+    });
+  } catch (error) {
+    /* fall back to the defaults above */
+  }
+
   await loadAll();
   // Keep the "Live" badge honest.
   setInterval(() => loadAll({ silent: true }), 30000);

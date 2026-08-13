@@ -186,6 +186,17 @@
       });
     },
 
+    trackEdit: function (id, accessCode, messageText) {
+      return request("/api/track/" + encodeURIComponent(id) + "/edit", {
+        method: "POST",
+        body: { accessCode: accessCode, messageText: messageText }
+      });
+    },
+
+    priorityTiers: function () {
+      return request("/api/priority-tiers");
+    },
+
     trackReply: function (id, accessCode, messageText) {
       return request("/api/track/" + encodeURIComponent(id) + "/messages", {
         method: "POST",
