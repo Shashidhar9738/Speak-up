@@ -417,6 +417,44 @@ body {
 .pwd-alert.error { background: var(--danger-light); color: #991b1b; }
 .pwd-alert.ok { background: var(--success-light); color: #065f46; }
 
+/* RECOGNITION */
+.kud-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-bottom:18px; }
+.kud-stat { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+.kud-stat-num { font-size:27px; font-weight:700; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+.kud-stat-label { font-size:12px; color:var(--text-sec); margin-top:3px; }
+
+.kud-card {
+  background:var(--card); border:1px solid var(--border); border-left:3px solid var(--kud-colour,var(--accent));
+  border-radius:var(--radius-sm); padding:15px 17px; margin-bottom:10px;
+  transition:box-shadow 200ms, transform 200ms;
+}
+.kud-card:hover { box-shadow:var(--shadow-lg); transform:translateY(-1px); }
+.kud-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:8px; }
+.kud-to { font-size:14px; font-weight:600; }
+.kud-chip { font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:20px; }
+.kud-text { font-size:13.5px; line-height:1.6; color:var(--text-sec); }
+.kud-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--text-muted); }
+.kud-actions { display:flex; gap:6px; margin-top:11px; }
+.kud-spotlit { box-shadow:0 0 0 2px #eda10055; }
+
+/* Teams receiving nothing is the number worth acting on, so it gets its own card. */
+.kud-gap { background:var(--warning-light); border:1px solid #f6e3bb; border-radius:var(--radius); padding:16px 18px; margin-bottom:18px; }
+.kud-gap-title { font-size:13px; font-weight:600; color:#92400e; display:flex; align-items:center; gap:7px; }
+.kud-gap-body { font-size:12.5px; color:#92400e; margin-top:6px; line-height:1.55; }
+.kud-gap-teams { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.kud-gap-team { font-size:11.5px; background:#fff; border:1px solid #f0d9a8; color:#92400e; padding:3px 10px; border-radius:20px; font-weight:500; }
+
+.kud-bar-row { display:grid; grid-template-columns:132px 1fr 34px; align-items:center; gap:12px; margin-bottom:9px; }
+.kud-bar-name { font-size:12.5px; color:var(--text-sec); font-weight:500; }
+.kud-bar-track { height:7px; background:var(--border-soft); border-radius:4px; overflow:hidden; }
+.kud-bar-fill { height:100%; border-radius:4px; transition:width 500ms cubic-bezier(.2,.7,.3,1); }
+.kud-bar-num { font-size:12.5px; font-weight:700; text-align:right; font-variant-numeric:tabular-nums; }
+
+.sugg { background:#f9fafb; border:1px solid var(--border-soft); border-radius:10px; padding:12px 14px; margin-top:8px; }
+.sugg-tone { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); font-weight:700; }
+.sugg-text { font-size:12.5px; line-height:1.6; margin-top:5px; color:var(--text-sec); }
+.sugg-copy { margin-top:8px; }
+
 /* SENTIMENT BARS */
 .sentiment-bar { display: flex; height: 34px; border-radius: 9px; overflow: hidden; margin-bottom: 11px; }
 .sentiment-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; }
@@ -476,6 +514,7 @@ body {
     <div class="nav-label">Action</div>
     <a class="nav-item" data-nav="critical"><i class="ti ti-alert-triangle"></i> Critical issues <span class="nav-badge red">8</span></a>
     <a class="nav-item" data-nav="feed"><i class="ti ti-list"></i> All complaints <span class="nav-badge blue">42</span></a>
+    <a class="nav-item" data-nav="recognition"><i class="ti ti-confetti"></i> Recognition <span class="nav-badge blue" id="kudBadge">0</span></a>
   </div>
 
   <div class="nav-group">
@@ -530,6 +569,7 @@ body {
     <div class="tab" data-tab="heatmap"><i class="ti ti-flame"></i> Heatmap</div>
     <div class="tab" data-tab="critical"><i class="ti ti-alert-triangle"></i> Critical</div>
     <div class="tab" data-tab="feed"><i class="ti ti-list"></i> Feed</div>
+      <div class="tab" data-tab="recognition"><i class="ti ti-confetti"></i> Recognition</div>
     <div class="tab" data-tab="trends"><i class="ti ti-trending-up"></i> Trends</div>
   </div>
 
@@ -609,6 +649,29 @@ body {
   </div>
 
   <!-- TRENDS -->
+  <div class="panel" id="panel-recognition">
+    <div class="kud-grid" id="kudStats"></div>
+    <div id="kudGap"></div>
+
+    <div style="display:grid; grid-template-columns:1fr 340px; gap:18px;" id="kudLayout">
+      <div class="card">
+        <div class="card-title"><i class="ti ti-confetti"></i> Recent appreciation</div>
+        <div class="card-sub">Newest first. Acknowledging tells the nominator it was seen.</div>
+        <div id="kudFeed"></div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title"><i class="ti ti-users"></i> Who is being recognised</div>
+          <div id="kudRecipients"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><i class="ti ti-category"></i> What for</div>
+          <div id="kudCategories"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-trends">
     <div class="card">
       <div class="card-title"><i class="ti ti-trending-up"></i> Category trend by week</div>
@@ -1485,6 +1548,7 @@ function renderFeedFilters(categoryCounts) {
       });
       if (active) {
         renderComplaints('allFeed', state.submissions);
+    loadRecognition();
       } else {
         button.dataset.on = '1';
         button.style.outline = '2px solid ' + prioStyle(p).colour;
@@ -1599,6 +1663,152 @@ async function loadAll(options) {
     setBusy(false);
   }
 }
+
+
+/* ----------------------------- RECOGNITION ----------------------------- */
+var kudState = { list: [], categories: [], metrics: null };
+
+function kudCat(id) {
+  return kudState.categories.find(function (c) { return c.id === id; }) ||
+         { label: id, colour: '#64748b', icon: 'ti-star' };
+}
+
+async function loadRecognition() {
+  var host = document.getElementById('kudFeed');
+  try {
+    var data = await SpeakUpApi.appreciationDashboard();
+    kudState.list = data.appreciations || [];
+    kudState.categories = data.categories || [];
+    kudState.metrics = data.metrics || {};
+    renderRecognition();
+  } catch (error) {
+    if (error.status === 403) {
+      host.innerHTML = emptyState('Your role cannot view recognition.');
+    } else if (error.status !== 401) {
+      host.innerHTML = emptyState(error.message || 'Could not load recognition.');
+    }
+  }
+}
+
+function renderRecognition() {
+  var m = kudState.metrics || {};
+
+  var badge = document.getElementById('kudBadge');
+  if (badge) { badge.textContent = m.total || 0; }
+
+  document.getElementById('kudStats').innerHTML = [
+    { num: m.total || 0, label: 'Appreciations received' },
+    { num: m.newCount || 0, label: 'Not yet acknowledged' },
+    { num: m.spotlights || 0, label: 'Spotlighted' },
+    { num: m.revealed || 0, label: 'Nominator named themselves' }
+  ].map(function (st) {
+    return '<div class="kud-stat"><div class="kud-stat-num tnum">' + esc(st.num) +
+           '</div><div class="kud-stat-label">' + esc(st.label) + '</div></div>';
+  }).join('');
+
+  // The teams nobody praised are the actionable finding, not the totals.
+  var gap = document.getElementById('kudGap');
+  var overlooked = m.overlookedTeams || [];
+  gap.innerHTML = overlooked.length ? (
+    '<div class="kud-gap">' +
+      '<div class="kud-gap-title"><i class="ti ti-alert-circle"></i> Recognition is not reaching everyone</div>' +
+      '<div class="kud-gap-body">' + overlooked.length + ' team' + (overlooked.length > 1 ? 's have' : ' has') +
+      ' received no appreciation at all. That is usually visibility, not performance.</div>' +
+      '<div class="kud-gap-teams">' + overlooked.map(function (t) {
+        return '<span class="kud-gap-team">' + esc(t) + '</span>';
+      }).join('') + '</div>' +
+    '</div>'
+  ) : '';
+
+  var feed = document.getElementById('kudFeed');
+  feed.innerHTML = kudState.list.length ? kudState.list.map(function (k) {
+    var cat = kudCat(k.category);
+    return '<div class="kud-card' + (k.spotlight ? ' kud-spotlit' : '') + '" data-kud="' + esc(k.id) + '" style="--kud-colour:' + esc(cat.colour) + '">' +
+      '<div class="kud-head">' +
+        '<span class="kud-to">' + esc(k.recipientName) + '</span>' +
+        '<span class="kud-chip" style="background:' + esc(cat.colour) + '1a;color:' + esc(cat.colour) + ';">' +
+          '<i class="ti ' + esc(cat.icon) + '"></i> ' + esc(cat.label) + '</span>' +
+        (k.spotlight ? '<span class="kud-chip" style="background:#fef3c7;color:#92400e;"><i class="ti ti-star"></i> Spotlight</span>' : '') +
+      '</div>' +
+      '<div class="kud-text">' + esc(k.messageText) + '</div>' +
+      '<div class="kud-meta">' +
+        '<span>' + esc(k.recipientTeam) + '</span><span>&middot;</span>' +
+        '<span>' + esc(timeAgo(k.createdAt)) + '</span><span>&middot;</span>' +
+        '<span>' + (k.revealed ? 'from ' + esc(k.nominatorName) : 'anonymous') + '</span>' +
+        (k.status === 'acknowledged' ? '<span style="color:var(--success);margin-left:auto;"><i class="ti ti-check"></i> acknowledged</span>' : '') +
+      '</div>' +
+      '<div class="kud-actions">' +
+        (k.status === 'acknowledged' ? '' : '<button class="action-btn ack" data-kudact="acknowledge" data-kud="' + esc(k.id) + '">Acknowledge</button>') +
+        '<button class="action-btn" data-kudact="suggest" data-kud="' + esc(k.id) + '">Suggest a reply</button>' +
+        (state.scope && state.scope.canManageUsers
+          ? '<button class="action-btn" data-kudact="spotlight" data-kud="' + esc(k.id) + '">' +
+            (k.spotlight ? 'Remove spotlight' : 'Spotlight') + '</button>' : '') +
+      '</div>' +
+      '<div data-sugg="' + esc(k.id) + '"></div>' +
+    '</div>';
+  }).join('') : emptyState('No appreciation yet. Share the submission page and it will fill up.');
+
+  var recipients = m.topRecipients || [];
+  var maxR = recipients.length ? recipients[0].count : 1;
+  document.getElementById('kudRecipients').innerHTML = recipients.length ? recipients.map(function (r) {
+    return '<div class="kud-bar-row">' +
+      '<div class="kud-bar-name">' + esc(r.name) + '</div>' +
+      '<div class="kud-bar-track"><div class="kud-bar-fill" style="width:' + ((r.count / maxR) * 100) + '%;background:var(--accent);"></div></div>' +
+      '<div class="kud-bar-num">' + esc(r.count) + '</div></div>';
+  }).join('') : emptyState('Nobody yet.');
+
+  var cats = Object.entries(m.byCategory || {}).sort(function (a, b) { return b[1] - a[1]; });
+  var maxC = cats.length ? cats[0][1] : 1;
+  document.getElementById('kudCategories').innerHTML = cats.length ? cats.map(function (e) {
+    var cat = kudCat(e[0]);
+    return '<div class="kud-bar-row">' +
+      '<div class="kud-bar-name">' + esc(cat.label) + '</div>' +
+      '<div class="kud-bar-track"><div class="kud-bar-fill" style="width:' + ((e[1] / maxC) * 100) + '%;background:' + esc(cat.colour) + ';"></div></div>' +
+      '<div class="kud-bar-num">' + esc(e[1]) + '</div></div>';
+  }).join('') : emptyState('Nothing yet.');
+}
+
+document.addEventListener('click', async function (event) {
+  var button = event.target.closest('button[data-kudact]');
+  if (!button) { return; }
+
+  var id = button.getAttribute('data-kud');
+  var action = button.getAttribute('data-kudact');
+  button.disabled = true;
+
+  try {
+    if (action === 'acknowledge') {
+      await SpeakUpApi.acknowledgeAppreciation(id);
+      await loadRecognition();
+    } else if (action === 'spotlight') {
+      var current = kudState.list.find(function (k) { return k.id === id; });
+      await SpeakUpApi.setSpotlight(id, !(current && current.spotlight));
+      await loadRecognition();
+    } else if (action === 'suggest') {
+      var host = document.querySelector('[data-sugg="' + id + '"]');
+      if (host.innerHTML) { host.innerHTML = ''; button.disabled = false; return; }
+      var result = await SpeakUpApi.suggestedReplies(id);
+      host.innerHTML = (result.suggestions || []).map(function (sg) {
+        return '<div class="sugg"><div class="sugg-tone">' + esc(sg.tone) + '</div>' +
+               '<div class="sugg-text">' + esc(sg.text) + '</div>' +
+               '<button class="action-btn sugg-copy" data-copy="' + esc(sg.text).replace(/"/g, '&quot;') + '">Copy</button></div>';
+      }).join('');
+      button.disabled = false;
+    }
+  } catch (error) {
+    alert(error.message || 'That did not work.');
+    button.disabled = false;
+  }
+});
+
+document.addEventListener('click', function (event) {
+  var button = event.target.closest('button[data-copy]');
+  if (!button) { return; }
+  navigator.clipboard.writeText(button.getAttribute('data-copy')).then(function () {
+    button.textContent = 'Copied';
+    setTimeout(function () { button.textContent = 'Copy'; }, 1800);
+  });
+});
 
 /* ----------------------------- SESSION ----------------------------- */
 

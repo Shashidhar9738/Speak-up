@@ -448,6 +448,27 @@ app.post("/api/submissions", submissionRateLimiter, validateSubmissionRequest, a
 
   const created = await createSubmission(submission);
 
+  // Kudos pipeline: a clearly positive submission is praise that arrived down
+  // the complaints channel. Mirror it into the recognition queue so it is not
+  // buried in a list nobody reads for good news. The original stays put — this
+  // is a copy, not a move, so no audit trail is broken.
+  if (submission.sentiment === "positive" && !submission.flags.spam) {
+    try {
+      await appreciation.createAppreciation({
+        recipientName: submission.department && submission.department !== "Unspecified"
+          ? `${submission.department} team`
+          : "Unnamed",
+        recipientTeam: submission.department,
+        category: "teamwork",
+        messageText: submission.messageText,
+        fromTeam: submission.region
+      });
+    } catch (error) {
+      // Recognition is a nice-to-have; never fail an intake over it.
+      console.warn("[speakup] could not mirror positive submission into recognition:", error.message);
+    }
+  }
+
   // accessCode is returned exactly once, here. It is not recoverable later —
   // only its hash is stored, which is what keeps the reporter unidentifiable.
   return response.status(201).json({

@@ -73,6 +73,19 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-outline:hover:not(:disabled) { border-color:var(--accent); }
 .alert.ok { background:var(--success-light); color:#065f46; }
 
+.tabs-lookup { display:flex; gap:4px; background:#f3f4f6; border-radius:10px; padding:4px; margin-bottom:20px; }
+.tab-lookup { flex:1; text-align:center; padding:9px; font-size:13px; font-weight:500; color:var(--text-sec);
+  border-radius:7px; cursor:pointer; transition:all 160ms; }
+.tab-lookup.on { background:#fff; color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.lookup-panel { display:none; }
+.lookup-panel.on { display:block; }
+.kud-note { background:var(--accent-light); border-radius:9px; padding:12px 14px; font-size:12.5px;
+  color:#3730a3; line-height:1.55; margin-bottom:16px; }
+.kud-result { display:none; }
+.kud-result.show { display:block; }
+.kud-summary { background:#f9fafb; border-radius:9px; padding:14px; font-size:13.5px; line-height:1.6; margin-bottom:16px; }
+.kud-to { font-weight:600; }
+
 .footer-note { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 20px; }
 .footer-note a { color: var(--text-sec); }
 </style>
@@ -111,6 +124,12 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   </div>
 
   <div class="card">
+    <div class="tabs-lookup">
+      <div class="tab-lookup on" data-look="report">A concern I raised</div>
+      <div class="tab-lookup" data-look="kudos">Appreciation I sent</div>
+    </div>
+
+    <div class="lookup-panel on" id="panel-report">
     <form id="lookupForm">
       <div class="field">
         <label for="refId">Reference</label>
@@ -167,6 +186,40 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
         <button type="submit" class="btn-primary" id="replyBtn" style="margin-top:10px;">Send reply</button>
         <div class="alert error" id="replyError"></div>
       </form>
+    </div>
+    </div>
+
+    <div class="lookup-panel" id="panel-kudos">
+      <div class="kud-note">
+        Appreciation you sent is anonymous by default. If you would like the
+        credit, add your name here — <strong>nothing reveals you without this</strong>,
+        and it can only be done once.
+      </div>
+
+      <form id="kudForm">
+        <div class="field">
+          <label for="kudId">Reference</label>
+          <input type="text" id="kudId" placeholder="KUD-…" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="kudCode">Your code</label>
+          <input type="text" id="kudCode" placeholder="KDS-XXXXX-XXXXX" required autocomplete="off" style="text-transform:uppercase;">
+        </div>
+        <div class="field">
+          <label for="kudName">Your name</label>
+          <input type="text" id="kudName" placeholder="How you would like to be credited" required maxlength="120">
+        </div>
+        <button type="submit" class="btn-primary" id="kudBtn">Add my name</button>
+        <div class="alert error" id="kudError"></div>
+      </form>
+
+      <div class="kud-result" id="kudResult">
+        <div class="kud-summary">
+          <div class="kud-to" id="kudTo"></div>
+          <div id="kudText" style="margin-top:7px;color:var(--text-sec);"></div>
+        </div>
+        <div class="alert ok show" id="kudOk"></div>
+      </div>
     </div>
   </div>
 
@@ -410,6 +463,48 @@ document.getElementById('replyForm').addEventListener('submit', async function (
   } finally {
     button.disabled = false;
     button.textContent = 'Send reply';
+  }
+});
+
+/* Two lookup modes: a concern you raised, or appreciation you sent. Different
+   codes, different stores, deliberately kept apart. */
+document.querySelectorAll('.tab-lookup').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tab-lookup').forEach(function (t) { t.classList.remove('on'); });
+    document.querySelectorAll('.lookup-panel').forEach(function (p) { p.classList.remove('on'); });
+    tab.classList.add('on');
+    document.getElementById('panel-' + tab.getAttribute('data-look')).classList.add('on');
+  });
+});
+
+document.getElementById('kudForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('kudError');
+  errorBox.classList.remove('show');
+
+  var button = document.getElementById('kudBtn');
+  button.disabled = true;
+  button.textContent = 'Adding\u2026';
+
+  try {
+    var result = await SpeakUpApi.revealNominator(
+      document.getElementById('kudId').value.trim(),
+      document.getElementById('kudCode').value.trim().toUpperCase(),
+      document.getElementById('kudName').value.trim()
+    );
+    var a = result.appreciation;
+    document.getElementById('kudTo').textContent = 'Your appreciation of ' + a.recipientName;
+    document.getElementById('kudText').textContent = a.messageText;
+    document.getElementById('kudOk').textContent =
+      'Done — this is now credited to ' + a.nominatorName + '.';
+    document.getElementById('kudForm').style.display = 'none';
+    document.getElementById('kudResult').classList.add('show');
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not add your name.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Add my name';
   }
 });
 </script>
