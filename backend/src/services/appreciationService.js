@@ -38,8 +38,6 @@ function rowToAppreciation(row) {
     messageText: value.messageText,
     fromTeam: value.fromTeam,
     nominatorName: value.nominatorName || null,
-    revealed: Boolean(value.revealed),
-    revealedAt: value.revealedAt || null,
     status: value.status,
     acknowledgedBy: value.acknowledgedBy || null,
     acknowledgedAt: value.acknowledgedAt || null,
@@ -56,10 +54,10 @@ function upsert(record) {
   db.get().prepare(`
     INSERT INTO appreciations (
       id, recipient_name, recipient_team, category, message_text, from_team,
-      nominator_name, revealed, revealed_at, status,
+      nominator_name, status,
       acknowledged_by, acknowledged_at, spotlight, spotlight_by, spotlight_at,
-      access_code_hash, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(id) DO UPDATE SET
       recipient_name = excluded.recipient_name,
       recipient_team = excluded.recipient_team,
@@ -67,8 +65,6 @@ function upsert(record) {
       message_text = excluded.message_text,
       from_team = excluded.from_team,
       nominator_name = excluded.nominator_name,
-      revealed = excluded.revealed,
-      revealed_at = excluded.revealed_at,
       status = excluded.status,
       acknowledged_by = excluded.acknowledged_by,
       acknowledged_at = excluded.acknowledged_at,
@@ -79,10 +75,10 @@ function upsert(record) {
   `).run(
     record.id, record.recipientName, record.recipientTeam, record.category,
     record.messageText, record.fromTeam,
-    record.nominatorName || null, record.revealed ? 1 : 0, record.revealedAt || null,
+    record.nominatorName || null,
     record.status, record.acknowledgedBy || null, record.acknowledgedAt || null,
     record.spotlight ? 1 : 0, record.spotlightBy || null, record.spotlightAt || null,
-    record.accessCodeHash, record.createdAt, record.updatedAt
+    record.createdAt, record.updatedAt
   );
   return record;
 }
@@ -93,25 +89,6 @@ function createId() {
   let body = "";
   for (let i = 0; i < 8; i += 1) { body += alphabet[bytes[i] % alphabet.length]; }
   return `KUD-${body.slice(0, 4)}-${body.slice(4)}`;
-}
-
-function createAccessCode() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = crypto.randomBytes(10);
-  let body = "";
-  for (let i = 0; i < 10; i += 1) { body += alphabet[bytes[i] % alphabet.length]; }
-  return `KDS-${body.slice(0, 5)}-${body.slice(5)}`;
-}
-
-function hashCode(code) {
-  return crypto.createHash("sha256").update(String(code).trim().toUpperCase()).digest("hex");
-}
-
-function codeMatches(candidate, storedHash) {
-  if (!storedHash) { return false; }
-  const left = Buffer.from(hashCode(candidate), "hex");
-  const right = Buffer.from(storedHash, "hex");
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
 /**
@@ -141,7 +118,6 @@ function suggestReplies(appreciation) {
 }
 
 async function createAppreciation(input) {
-  const accessCode = createAccessCode();
   const now = new Date().toISOString();
 
   const record = {
@@ -151,22 +127,20 @@ async function createAppreciation(input) {
     category: CATEGORY_IDS.has(input.category) ? input.category : "teamwork",
     messageText: String(input.messageText || "").trim(),
     fromTeam: String(input.fromTeam || "").trim().slice(0, 80) || "Unspecified",
-    // Anonymous by default. The nominator may attach their name later through
-    // the reveal flow, but never automatically.
-    nominatorName: null,
-    revealed: false,
-    revealedAt: null,
+    // Optional, decided on the form. Blank means the nominator preferred not to
+    // be named — there is no mechanism to attach it afterwards, and none is
+    // needed: unlike a complaint, praising a colleague risks nothing.
+    nominatorName: String(input.nominatorName || "").trim().slice(0, 120) || null,
     status: "new",
     acknowledgedBy: null,
     acknowledgedAt: null,
     spotlight: false,
     createdAt: now,
-    updatedAt: now,
-    accessCodeHash: hashCode(accessCode)
+    updatedAt: now
   };
 
   upsert(record);
-  return { appreciation: record, accessCode };
+  return { appreciation: record };
 }
 
 async function listAppreciations(query) {
@@ -197,39 +171,8 @@ async function updateAppreciation(id, updater) {
   return upsert(updater(existing));
 }
 
-/**
- * Reveal-on-consent. The nominator holds a code; presenting it lets them attach
- * their name so the recognition can be attributed. It is one-way and explicit —
- * nothing reveals a nominator without this call.
- */
-async function revealNominator(id, accessCode, nominatorName) {
-  const existing = await getById(id);
-  if (!existing || !codeMatches(accessCode, existing.accessCodeHash)) {
-    return { error: "No appreciation matches that reference and code" };
-  }
-  if (existing.revealed) {
-    return { error: "This nomination has already been attributed" };
-  }
-
-  const name = String(nominatorName || "").trim().slice(0, 120);
-  if (!name) {
-    return { error: "A name is required to attribute this nomination" };
-  }
-
-  const updated = await updateAppreciation(id, (current) => ({
-    ...current,
-    nominatorName: name,
-    revealed: true,
-    revealedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }));
-
-  return { appreciation: updated };
-}
-
 function publicAppreciation(appreciation) {
-  const { accessCodeHash, ...safe } = appreciation;
-  return safe;
+  return appreciation;
 }
 
 /**
@@ -263,7 +206,7 @@ function buildAppreciationMetrics(list, knownTeams) {
     total: list.length,
     newCount: list.filter((a) => a.status === "new").length,
     spotlights: list.filter((a) => a.spotlight).length,
-    revealed: list.filter((a) => a.revealed).length,
+    attributed: list.filter((a) => a.nominatorName).length,
     byCategory,
     byRecipientTeam,
     byNominatingTeam,
@@ -330,7 +273,7 @@ function buildDigest(list, options) {
       recipientTeam: a.recipientTeam,
       category: a.category,
       messageText: a.messageText,
-      from: a.revealed ? a.nominatorName : "a colleague",
+      from: a.nominatorName || "a colleague",
       spotlight: a.spotlight
     }))
   };
@@ -390,7 +333,7 @@ function digestToHtml(digest) {
     ${cards || `<tr><td style="font:400 13px Inter,Arial,sans-serif;color:#98a1b0;padding:20px;text-align:center;">
       No appreciation in this period.</td></tr>`}
     <tr><td style="font:400 11.5px Inter,Arial,sans-serif;color:#98a1b0;padding-top:14px;text-align:center;">
-      Nominators stay anonymous unless they chose to be named.
+      Nominators are named only where they chose to be.
     </td></tr>
   </table></body></html>`;
 }
@@ -402,7 +345,6 @@ module.exports = {
   listAppreciations,
   getById,
   updateAppreciation,
-  revealNominator,
   publicAppreciation,
   buildAppreciationMetrics,
   suggestReplies,

@@ -199,13 +199,6 @@
       return request("/api/appreciations", { method: "POST", body: payload });
     },
 
-    revealNominator: function (id, accessCode, nominatorName) {
-      return request("/api/appreciations/" + encodeURIComponent(id) + "/reveal", {
-        method: "POST",
-        body: { accessCode: accessCode, nominatorName: nominatorName }
-      });
-    },
-
     appreciationDashboard: function (query) {
       return request("/api/dashboard/appreciation" + toQueryString(query), { auth: true });
     },

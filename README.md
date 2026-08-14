@@ -211,7 +211,7 @@ SQLite, one file, no server. Six tables:
 | `submissions` | complaints; no column identifies the reporter, the access code is a hash |
 | `messages` | the two-way thread on a submission |
 | `users` | dashboard accounts; passwords are scrypt hashes |
-| `appreciations` | recognition; names the recipient, not the nominator |
+| `appreciations` | recognition; names the recipient, and the nominator only if they chose |
 | `notifications` | in-app notices waiting for a reporter |
 | `rate_limits` | request counters, persisted so a restart does not reset them |
 

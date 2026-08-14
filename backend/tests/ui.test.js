@@ -49,8 +49,7 @@ async function loadPage(page, options = {}) {
     submit: async () => ({ submission: { id: "TKT-TEST-0001", keywords: [] }, accessCode: "SPK-TEST-CODE" }),
     track: async () => ({ submission: {}, messages: [], canEdit: false }),
     appreciationCategories: async () => ({ categories: [] }),
-    appreciate: async () => ({ appreciation: { id: "KUD-TEST-0001" }, accessCode: "KDS-TEST-CODE" }),
-    revealNominator: async () => ({ appreciation: {} }),
+    appreciate: async () => ({ appreciation: { id: "KUD-TEST-0001", nominatorName: null } }),
     priorityTiers: async () => ({ tiers: [] }),
     appreciationDashboard: async () => ({ metrics: {}, categories: [], appreciations: [] }),
     dashboard: {

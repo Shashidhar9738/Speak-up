@@ -19,8 +19,8 @@ const config = require("../config");
  *                  hand.
  *   messages       Two-way thread on a submission (admin <-> reporter).
  *   users          Dashboard accounts. Passwords are scrypt hashes.
- *   appreciations  Recognition. Names the RECIPIENT; nominator_name stays null
- *                  unless the nominator explicitly attributes themselves.
+ *   appreciations  Recognition. Names the RECIPIENT, and the nominator only if
+ *                  they chose to be credited on the form.
  *   notifications  In-app notices for reporters, keyed by submission.
  *   rate_limits    Request counters. Persisted, so a limit can no longer be
  *                  bypassed by waiting for the process to restart.
@@ -116,16 +116,16 @@ function migrate() {
       category         TEXT NOT NULL,
       message_text     TEXT NOT NULL,
       from_team        TEXT NOT NULL DEFAULT 'Unspecified',
+      -- Set at submission time if the nominator chose to be credited, null if
+      -- they preferred not to be. There is no later reveal: praising someone
+      -- carries no retaliation risk, so the decision is made once, on the form.
       nominator_name   TEXT,
-      revealed         INTEGER NOT NULL DEFAULT 0,
-      revealed_at      TEXT,
       status           TEXT NOT NULL DEFAULT 'new',
       acknowledged_by  TEXT,
       acknowledged_at  TEXT,
       spotlight        INTEGER NOT NULL DEFAULT 0,
       spotlight_by     TEXT,
       spotlight_at     TEXT,
-      access_code_hash TEXT NOT NULL,
       created_at       TEXT NOT NULL,
       updated_at       TEXT NOT NULL
     );

@@ -208,7 +208,6 @@ function buildApiInventory() {
       { method: "GET", path: "/api/priority-tiers", purpose: "Keyword to priority mapping and colour codes" },
       { method: "GET", path: "/api/appreciations/categories", purpose: "Appreciation categories" },
       { method: "POST", path: "/api/appreciations", purpose: "Submit appreciation (open, no account)" },
-      { method: "POST", path: "/api/appreciations/:id/reveal", purpose: "Nominator opts in to attribution" },
       { method: "GET", path: "/api/dashboard/appreciation", purpose: "Appreciation metrics and balance alerts" },
       { method: "GET", path: "/api/appreciations/:id/suggested-replies", purpose: "Suggested thank-you wording" },
       { method: "POST", path: "/api/appreciations/:id/acknowledge", purpose: "Acknowledge an appreciation" },
@@ -972,28 +971,14 @@ app.post("/api/appreciations", submissionRateLimiter, async (request, response, 
     recipientTeam: request.body?.recipientTeam,
     category: String(request.body?.category || "").trim(),
     messageText,
-    fromTeam: request.body?.fromTeam
+    fromTeam: request.body?.fromTeam,
+    // Optional and decided here. Blank means they preferred not to be named.
+    nominatorName: request.body?.nominatorName
   });
 
-  // The code is returned once. It is the only way the nominator can come back
-  // and attach their name, and only a hash of it is stored.
   return response.status(201).json({
-    appreciation: appreciation.publicAppreciation(created.appreciation),
-    accessCode: created.accessCode
+    appreciation: appreciation.publicAppreciation(created.appreciation)
   });
-});
-
-app.post("/api/appreciations/:id/reveal", submissionRateLimiter, async (request, response, next) => {
-  const result = await appreciation.revealNominator(
-    String(request.params.id || "").trim(),
-    String(request.body?.accessCode || "").trim(),
-    request.body?.nominatorName
-  );
-
-  if (result.error) {
-    return next(createHttpError(404, result.error));
-  }
-  return response.json({ appreciation: appreciation.publicAppreciation(result.appreciation) });
 });
 
 app.get("/api/dashboard/appreciation", requireAdmin, async (request, response) => {

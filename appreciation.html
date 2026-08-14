@@ -162,9 +162,8 @@ button:disabled { opacity:.55; cursor:not-allowed; }
       <div class="privacy">
         <i class="ti ti-user-check"></i>
         <div class="privacy-text">
-          The person you name will hear about this. <strong>You stay anonymous</strong> —
-          we do not record who sent it. If you would like the credit, you can add
-          your name afterwards using the code we give you.
+          The person you name will hear about this. Adding your own name below is
+          optional — leave it blank and the note arrives unsigned.
         </div>
       </div>
 
@@ -197,6 +196,12 @@ button:disabled { opacity:.55; cursor:not-allowed; }
       </div>
 
       <div class="field">
+        <label for="nominatorName">Your name <span class="hint" style="display:inline;">(optional)</span></label>
+        <input type="text" id="nominatorName" maxlength="120" placeholder="Leave blank to stay anonymous">
+        <div class="hint">Add it if you would like the credit. Blank means the note arrives unsigned.</div>
+      </div>
+
+      <div class="field">
         <label for="fromTeam">Your team <span class="hint" style="display:inline;">(optional)</span></label>
         <select id="fromTeam">
           <option value="">Prefer not to say</option>
@@ -219,15 +224,10 @@ button:disabled { opacity:.55; cursor:not-allowed; }
       <div class="receipt">
         <div class="receipt-label">Reference</div>
         <div class="receipt-value" id="refId">—</div>
-        <div class="receipt-label" style="margin-top:14px;">Your code — shown once</div>
-        <div class="receipt-value" id="accessCode">—</div>
-        <button class="btn-ghost" id="copyBtn" style="font-size:12px;">Copy both</button>
+        <button class="btn-ghost" id="copyBtn" style="font-size:12px;">Copy reference</button>
       </div>
 
-      <p style="font-size:12.5px;">
-        Keep the code if you might want the credit later. On the tracking page
-        it lets you attach your name to this note — nothing reveals you without it.
-      </p>
+      <p style="font-size:12.5px;" id="attribNote"></p>
 
       <button class="btn-ghost" id="againBtn">Appreciate someone else</button>
     </div>
@@ -319,13 +319,15 @@ document.getElementById('form').addEventListener('submit', async function (event
       recipientTeam: document.getElementById('recipientTeam').value || undefined,
       category: chosen,
       messageText: text,
-      fromTeam: document.getElementById('fromTeam').value || undefined
+      fromTeam: document.getElementById('fromTeam').value || undefined,
+      nominatorName: document.getElementById('nominatorName').value.trim() || undefined
     });
 
     document.getElementById('refId').textContent = result.appreciation.id;
-    document.getElementById('accessCode').textContent = result.accessCode;
-    document.getElementById('confirmMsg').textContent =
-      name + ' will hear about this.';
+    document.getElementById('confirmMsg').textContent = name + ' will hear about this.';
+    document.getElementById('attribNote').textContent = result.appreciation.nominatorName
+      ? 'It will be credited to ' + result.appreciation.nominatorName + '.'
+      : 'It will arrive unsigned — you chose not to be named.';
     document.getElementById('form').style.display = 'none';
     document.getElementById('confirm').classList.add('show');
   } catch (error) {
@@ -338,12 +340,11 @@ document.getElementById('form').addEventListener('submit', async function (event
 });
 
 document.getElementById('copyBtn').addEventListener('click', function () {
-  var text = 'Reference: ' + document.getElementById('refId').textContent +
-             '\nCode: ' + document.getElementById('accessCode').textContent;
+  var text = 'Reference: ' + document.getElementById('refId').textContent;
   var button = this;
   navigator.clipboard.writeText(text).then(function () {
     button.textContent = 'Copied';
-    setTimeout(function () { button.textContent = 'Copy both'; }, 2000);
+    setTimeout(function () { button.textContent = 'Copy reference'; }, 2000);
   }).catch(function () { button.textContent = 'Copy failed — select manually'; });
 });
 
