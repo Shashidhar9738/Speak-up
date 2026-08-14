@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 
+# Working dashboard passwords. The repository is public; committing this would
+# publish them, and once deployed that is owner access to every complaint.
+CREDENTIALS.md
+
 node_modules/
 dist/
 

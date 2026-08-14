@@ -77,6 +77,34 @@ complaints and account records never enter version control.
 
 ---
 
+## Credentials
+
+Working passwords are **not in this repository** — it is public, and a
+deployed instance would then be open to anyone who found it.
+
+They live in `CREDENTIALS.md`, which is gitignored and stays on the machine
+that runs the app. That file lists the accounts, what each role can see, and
+how to reset.
+
+If you have cloned this and have no `CREDENTIALS.md`, create an account:
+
+```bash
+npm start
+# then register at http://127.0.0.1:3000/register.html with a @comviva.com address
+```
+
+The first bootstrap owner comes from `SPEAKUP_ADMIN_EMAILS` in `.env`. To set
+or reset a password directly:
+
+```bash
+node backend/scripts/set-password.js someone@comviva.com --generate
+```
+
+Passwords are scrypt hashes and cannot be read back, so this is the recovery
+path rather than a lookup.
+
+---
+
 ## The three surfaces
 
 | Page | URL | Who | Auth |
