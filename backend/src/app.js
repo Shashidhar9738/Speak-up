@@ -222,11 +222,11 @@ function buildApiInventory() {
       { method: "GET", path: "/api/dashboard/awaiting-reply", purpose: "Reports where the reporter is waiting on an answer" },
       { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
       { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
+      { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
       { method: "GET", path: "/api/todo/apis", purpose: "API inventory and backlog" }
     ],
     backlog: [
-      { method: "GET", path: "/api/dashboard/export.pdf", phase: "Phase 2", purpose: "Leadership PDF export" },
       { method: "POST", path: "/api/integrations/hris/webhook", phase: "Phase 3", purpose: "HRIS synchronization" }
     ]
   };
@@ -1121,6 +1121,145 @@ app.get("/api/dashboard/escalated", requireAdmin, async (request, response, next
     count: escalated.length,
     submissions: escalated.map((item) => redact(request.user, item))
   });
+});
+
+/**
+ * Leadership briefing, print-ready.
+ *
+ * Served as HTML with print styles rather than a generated PDF: the browser's
+ * own "Save as PDF" produces a better document than a bundled renderer, and
+ * adding a PDF library for one report would be a large dependency for a small
+ * feature. @page rules control the paper size and margins.
+ */
+function briefingHtml(user, metrics, submissions, escalated, range) {
+  const esc = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  const totals = metrics.totals || {};
+  const open = submissions.filter((item) => item.status === "open");
+  const SLA_DAYS = { P1: 1, P2: 5, P3: 30 };
+  const overdue = open.filter((item) => {
+    const days = (Date.now() - new Date(item.createdAt).getTime()) / 86400000;
+    return days > (SLA_DAYS[item.priority] || 30);
+  });
+
+  const byDept = {};
+  submissions.forEach((item) => { byDept[item.department] = (byDept[item.department] || 0) + 1; });
+  const departments = Object.entries(byDept).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  const categories = Object.entries(metrics.categoryCounts || {}).sort((a, b) => b[1] - a[1]);
+  const attention = submissions
+    .filter((item) => item.status !== "resolved")
+    .sort(comparePriority)
+    .slice(0, 10);
+
+  const colour = { P1: "#dc2626", P2: "#d97706", P3: "#2a78d6" };
+  const row = (label, value, total) => `
+    <tr>
+      <td style="padding:6px 0;font-size:12px;">${esc(label)}</td>
+      <td style="padding:6px 0;width:180px;">
+        <div style="background:#eef1f5;height:7px;border-radius:4px;overflow:hidden;">
+          <div style="background:#2a78d6;height:100%;width:${total ? (value / total) * 100 : 0}%;"></div>
+        </div>
+      </td>
+      <td style="padding:6px 0 6px 10px;font-size:12px;font-weight:700;text-align:right;width:34px;">${esc(value)}</td>
+    </tr>`;
+
+  return `<!doctype html><html><head><meta charset="utf-8">
+<title>SpeakUp briefing ${esc(new Date().toISOString().slice(0, 10))}</title>
+<style>
+  @page { size: A4; margin: 16mm; }
+  * { box-sizing: border-box; }
+  body { font: 400 13px/1.6 -apple-system, "Segoe UI", Arial, sans-serif; color: #0f1420; margin: 0; }
+  h1 { font-size: 22px; letter-spacing: -.5px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e8ebf0; }
+  .muted { color: #5b6474; font-size: 12px; }
+  .kpis { display: flex; gap: 10px; margin: 18px 0 4px; }
+  .kpi { flex: 1; border: 1px solid #e8ebf0; border-radius: 10px; padding: 12px 14px; }
+  .kpi-n { font-size: 24px; font-weight: 700; letter-spacing: -1px; }
+  .kpi-l { font-size: 11px; color: #5b6474; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  .item { border: 1px solid #e8ebf0; border-left: 3px solid #ccc; border-radius: 8px;
+          padding: 10px 12px; margin-bottom: 8px; page-break-inside: avoid; }
+  .item-head { font-size: 11.5px; color: #5b6474; margin-bottom: 4px; }
+  .badge { font-weight: 700; font-size: 10.5px; padding: 2px 7px; border-radius: 20px; }
+  .foot { margin-top: 26px; padding-top: 10px; border-top: 1px solid #e8ebf0;
+          font-size: 10.5px; color: #98a1b0; }
+  /* Print exactly what is on screen; a briefing with the bars stripped out is
+     harder to read than one with a little ink. */
+  @media print {
+    .noprint { display: none; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style></head><body>
+
+<div class="noprint" style="background:#14162a;color:#fff;padding:12px 16px;border-radius:10px;margin-bottom:20px;font-size:13px;">
+  Use your browser's <strong>Print &rarr; Save as PDF</strong> to file this.
+  <button onclick="window.print()" style="float:right;background:#fff;color:#14162a;border:0;border-radius:7px;padding:6px 14px;font-weight:600;cursor:pointer;">Print</button>
+</div>
+
+<h1>SpeakUp leadership briefing</h1>
+<div class="muted">
+  ${esc(new Date().toDateString())}${range ? " &middot; " + esc(range) : ""}
+  &middot; prepared for ${esc(user.email)}
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="kpi-n">${esc(totals.submissions || 0)}</div><div class="kpi-l">Reports in scope</div></div>
+  <div class="kpi"><div class="kpi-n" style="color:#dc2626;">${esc(open.length)}</div><div class="kpi-l">Still open</div></div>
+  <div class="kpi"><div class="kpi-n" style="color:${overdue.length ? "#d97706" : "#059669"};">${esc(overdue.length)}</div><div class="kpi-l">Past response target</div></div>
+  <div class="kpi"><div class="kpi-n" style="color:#4a3aa7;">${esc(escalated.length)}</div><div class="kpi-l">Escalated</div></div>
+</div>
+
+<h2>Where things stand</h2>
+<p style="font-size:13px;margin:0;">
+  ${open.length
+    ? `${open.length} report${open.length > 1 ? "s remain" : " remains"} open` +
+      (overdue.length ? `, of which <strong>${overdue.length} ${overdue.length > 1 ? "have" : "has"} passed the response target</strong>` : ", all within target") + "."
+    : "Nothing is currently open."}
+  ${escalated.length ? ` ${escalated.length} ${escalated.length > 1 ? "reports have" : "report has"} been escalated for specialist review.` : ""}
+  ${departments.length ? ` ${esc(departments[0][0])} accounts for the largest share at ${Math.round((departments[0][1] / (submissions.length || 1)) * 100)}%.` : ""}
+</p>
+
+<h2>By category</h2>
+<table>${categories.map(([name, n]) => row(name, n, categories[0] ? categories[0][1] : 1)).join("")}</table>
+
+<h2>By department</h2>
+<table>${departments.map(([name, n]) => row(name, n, departments[0] ? departments[0][1] : 1)).join("")}</table>
+
+<h2>Needs attention</h2>
+${attention.length ? attention.map((item) => `
+  <div class="item" style="border-left-color:${colour[item.priority] || "#ccc"};">
+    <div class="item-head">
+      <span class="badge" style="background:${colour[item.priority]}1a;color:${colour[item.priority]};">${esc(item.priority)}</span>
+      &nbsp;${esc(item.id)} &middot; ${esc(item.category)} &middot; ${esc(item.department)}
+      &middot; ${esc(item.status)}${item.escalated ? " &middot; escalated" : ""}
+    </div>
+    <div style="font-size:12.5px;">${esc(item.summary || "")}</div>
+  </div>`).join("") : '<div class="muted">Nothing outstanding.</div>'}
+
+<div class="foot">
+  Reports are anonymous by design — nothing in this document identifies who filed anything.
+  Generated from SpeakUp on ${esc(new Date().toISOString())}.
+</div>
+</body></html>`;
+}
+
+app.get("/api/dashboard/export.pdf", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).export) {
+    return next(createHttpError(403, "Your role cannot export"));
+  }
+
+  const filtered = await scopedSubmissions(request.user, request.query);
+  const metrics = buildMetrics(filtered);
+  const escalated = filtered.filter((item) => item.escalated);
+
+  audit.record("export.briefing", request.user.email, { count: filtered.length });
+
+  const range = request.query.days ? `last ${request.query.days} days` : null;
+  response.setHeader("Content-Type", "text/html; charset=utf-8");
+  return response.send(briefingHtml(request.user, metrics, filtered, escalated, range));
 });
 
 app.get("/api/todo/apis", (request, response) => {
