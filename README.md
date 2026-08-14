@@ -208,7 +208,11 @@ the repo, because it names real people.
 npm start            # run
 npm run dev          # run with auto-restart
 npm test             # frontend tests (jsdom)
+npm run backup       # snapshot the database (see below)
 npm run build        # static bundle into dist/ (frontend only — no API)
+
+# reset a password (scrypt hashes cannot be read back)
+node backend/scripts/set-password.js someone@comviva.com --generate
 ```
 
 ## Configuration

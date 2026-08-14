@@ -15,6 +15,7 @@ dist/
 # that name individuals. None of it belongs in version control.
 backend/data/
 !backend/data/.gitkeep
+backend/backups/
 
 npm-debug.log*
 *.log

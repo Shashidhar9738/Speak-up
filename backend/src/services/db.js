@@ -73,6 +73,13 @@ function migrate() {
       flag_sensitive   INTEGER NOT NULL DEFAULT 0,
       browser_locale   TEXT,
       access_code_hash TEXT NOT NULL,
+      -- Escalation is a separate axis from status: a report can be escalated
+      -- and still open, and un-escalating must not silently reopen it.
+      escalated        INTEGER NOT NULL DEFAULT 0,
+      escalated_to     TEXT,
+      escalated_by     TEXT,
+      escalated_at     TEXT,
+      escalation_note  TEXT,
       edited_at        TEXT,
       edit_count       INTEGER NOT NULL DEFAULT 0,
       created_at       TEXT NOT NULL,

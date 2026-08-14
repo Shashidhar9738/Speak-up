@@ -43,6 +43,11 @@ function rowToSubmission(row, messages) {
     },
     metadata: { browserLocale: value.browserLocale || "unknown" },
     accessCodeHash: value.accessCodeHash,
+    escalated: Boolean(value.escalated),
+    escalatedTo: value.escalatedTo || null,
+    escalatedBy: value.escalatedBy || null,
+    escalatedAt: value.escalatedAt || null,
+    escalationNote: value.escalationNote || null,
     editedAt: value.editedAt || undefined,
     editCount: value.editCount || 0,
     messages: messages || [],
@@ -95,8 +100,9 @@ async function createSubmission(submission) {
       priority_reason, priority_terms, sla, status, status_note,
       department, region, channel, quarantined,
       flag_spam, flag_urgent, flag_sensitive, browser_locale,
-      access_code_hash, edited_at, edit_count, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      access_code_hash, escalated, escalated_to, escalated_by, escalated_at,
+      escalation_note, edited_at, edit_count, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     submission.id, submission.messageText, submission.summary, submission.category,
     JSON.stringify(submission.keywords || []), submission.sentiment,
@@ -109,6 +115,9 @@ async function createSubmission(submission) {
     submission.flags?.spam ? 1 : 0, submission.flags?.urgent ? 1 : 0, submission.flags?.sensitive ? 1 : 0,
     submission.metadata?.browserLocale || "unknown",
     submission.accessCodeHash,
+    submission.escalated ? 1 : 0, submission.escalatedTo || null,
+    submission.escalatedBy || null, submission.escalatedAt || null,
+    submission.escalationNote || null,
     submission.editedAt || null, submission.editCount || 0,
     submission.createdAt, submission.updatedAt
   );
@@ -152,7 +161,8 @@ async function updateSubmission(submissionId, updater) {
         priority_reason = ?, priority_terms = ?, sla = ?,
         status = ?, status_note = ?, department = ?, region = ?, channel = ?,
         quarantined = ?, flag_spam = ?, flag_urgent = ?, flag_sensitive = ?,
-        edited_at = ?, edit_count = ?, updated_at = ?
+        escalated = ?, escalated_to = ?, escalated_by = ?, escalated_at = ?,
+        escalation_note = ?, edited_at = ?, edit_count = ?, updated_at = ?
       WHERE id = ?
     `).run(
       next.messageText, next.summary, next.category,
@@ -164,6 +174,8 @@ async function updateSubmission(submissionId, updater) {
       next.department, next.region, next.channel,
       next.quarantined ? 1 : 0,
       next.flags?.spam ? 1 : 0, next.flags?.urgent ? 1 : 0, next.flags?.sensitive ? 1 : 0,
+      next.escalated ? 1 : 0, next.escalatedTo || null, next.escalatedBy || null,
+      next.escalatedAt || null, next.escalationNote || null,
       next.editedAt || null, next.editCount || 0,
       next.updatedAt || new Date().toISOString(),
       id

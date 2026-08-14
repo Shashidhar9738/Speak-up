@@ -220,14 +220,14 @@ function buildApiInventory() {
       { method: "GET", path: "/api/dashboard/heatmap", purpose: "Department heatmap payload" },
       { method: "GET", path: "/api/dashboard/alerts", purpose: "High-priority alerts payload" },
       { method: "GET", path: "/api/dashboard/awaiting-reply", purpose: "Reports where the reporter is waiting on an answer" },
+      { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
+      { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
       { method: "GET", path: "/api/todo/apis", purpose: "API inventory and backlog" }
     ],
     backlog: [
       { method: "GET", path: "/api/dashboard/export.pdf", phase: "Phase 2", purpose: "Leadership PDF export" },
-      { method: "POST", path: "/api/integrations/hris/webhook", phase: "Phase 3", purpose: "HRIS synchronization" },
-      { method: "POST", path: "/api/submissions/:id/escalate", phase: "Phase 3", purpose: "Compliance escalation workflow" },
-      { method: "GET", path: "/api/compliance/audit-log", phase: "Phase 3", purpose: "Compliance audit trail" }
+      { method: "POST", path: "/api/integrations/hris/webhook", phase: "Phase 3", purpose: "HRIS synchronization" }
     ]
   };
 }
@@ -1052,6 +1052,75 @@ app.get("/api/export/brightspots", requireAdmin, async (request, response, next)
     return response.send(appreciation.digestToHtml(digest));
   }
   return response.json({ digest });
+});
+
+/**
+ * Escalation — hand a report to compliance or legal.
+ *
+ * Deliberately separate from status: a report can be escalated and still open,
+ * and withdrawing an escalation must not silently close it. Only roles that
+ * can see sensitive reports may escalate, since the reports most likely to
+ * need it are exactly the ones a department lead cannot read.
+ */
+const ESCALATION_TARGETS = new Set(["compliance", "legal", "hr", "board", "external"]);
+
+app.post("/api/submissions/:id/escalate", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot escalate reports"));
+  }
+
+  const existing = await getSubmissionById(request.params.id);
+  if (!existing || !canSeeSubmission(request.user, existing)) {
+    return response.status(404).json({ error: "Submission not found" });
+  }
+
+  const withdraw = request.body?.escalate === false;
+  const target = String(request.body?.to || "").trim().toLowerCase();
+  const note = String(request.body?.note || "").trim().slice(0, 1000);
+
+  if (!withdraw && !ESCALATION_TARGETS.has(target)) {
+    return next(createHttpError(400,
+      `to must be one of: ${[...ESCALATION_TARGETS].join(", ")}`));
+  }
+  if (!withdraw && !note) {
+    return next(createHttpError(400, "A reason is required to escalate"));
+  }
+
+  const now = new Date().toISOString();
+  const updated = await updateSubmission(existing.id, (current) => ({
+    ...current,
+    escalated: !withdraw,
+    escalatedTo: withdraw ? null : target,
+    escalatedBy: withdraw ? null : request.user.email,
+    escalatedAt: withdraw ? null : now,
+    escalationNote: withdraw ? null : note,
+    updatedAt: now
+  }));
+
+  audit.record(withdraw ? "submission.escalation_withdrawn" : "submission.escalated",
+    request.user.email, { id: updated.id, to: withdraw ? null : target });
+
+  // The reporter is told it moved, but not to whom — naming the destination
+  // could identify who is handling it in a small function.
+  if (!withdraw) {
+    notifications.create(updated.id, "status",
+      "Your report has been escalated",
+      "It has been passed to a specialist team for review.");
+  }
+
+  return response.json({ submission: publicSubmission(updated) });
+});
+
+app.get("/api/dashboard/escalated", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot view escalations"));
+  }
+  const filtered = await scopedSubmissions(request.user, request.query);
+  const escalated = filtered.filter((item) => item.escalated).sort(comparePriority);
+  return response.json({
+    count: escalated.length,
+    submissions: escalated.map((item) => redact(request.user, item))
+  });
 });
 
 app.get("/api/todo/apis", (request, response) => {
