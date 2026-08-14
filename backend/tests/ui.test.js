@@ -57,6 +57,7 @@ async function loadPage(page, options = {}) {
       submissions: async () => ({ count: 0, submissions: [] }),
       alerts: async () => ({ alerts: [] }),
       awaitingReply: async () => ({ count: 0, submissions: [] }),
+      patterns: async () => ({ windowDays: 30, detected: 0, patterns: [], thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 } }),
       categories: async () => ({ categories: [] }),
       trends: async () => ({ trends: [] }),
       heatmap: async () => ({ heatmap: {} }),
@@ -493,6 +494,51 @@ test("the dashboard never lists a signed-in user's own reports", async () => {
     "expected a code lookup, not a list of the user's reports");
   assert.match(panel.textContent, /not linked to your reports/i,
     "the page does not explain that the account is not linked to submissions");
+});
+
+/* ---------------- patterns ---------------- */
+
+test("a detected pattern is shown with the rules that produced it", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        patterns: async () => ({
+          windowDays: 30, detected: 1,
+          thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 },
+          patterns: [{
+            kind: "cluster", id: "cluster:Sales:Harassment", headline: "5 reports about Harassment in Sales",
+            detail: "4 still unresolved.", sensitive: true, submissionIds: ["TKT-1", "TKT-2"], score: 90
+          }]
+        })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 80));
+
+  const card = window.document.getElementById("patternCard");
+  assert.notEqual(card.style.display, "none", "pattern card hidden from an owner");
+  assert.match(card.textContent, /5 reports about Harassment in Sales/);
+  assert.match(card.textContent, /sensitive/i, "a sensitive cluster is not marked as such");
+  // A reader must be able to judge whether a pattern is real.
+  assert.match(window.document.getElementById("patternWhy").textContent, /3\+ reports/,
+    "thresholds are not stated, so the claim cannot be checked");
+});
+
+test("staff never sees the pattern card", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "s@comviva.com", role: "staff" }, scope: scopeFor("staff") }),
+      dashboard: {
+        patterns: async () => { throw Object.assign(new Error("forbidden"), { status: 403 }); }
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(window.document.getElementById("patternCard").style.display, "none",
+    "a pattern names a department and a count, which can identify people in a small team");
 });
 
 /* ---------------- markup without styling ---------------- */

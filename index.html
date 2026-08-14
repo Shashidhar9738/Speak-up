@@ -496,6 +496,19 @@ body {
 .pwd-alert.error { background: var(--danger-light); color: #991b1b; }
 .pwd-alert.ok { background: var(--success-light); color: #065f46; }
 
+/* PATTERNS */
+.pat { border:1px solid var(--border); border-left:3px solid var(--pat-colour,var(--accent));
+  border-radius:var(--radius-sm); padding:15px 17px; margin-bottom:10px; background:var(--card);
+  transition:box-shadow 200ms, transform 200ms; cursor:pointer; }
+.pat:hover { box-shadow:var(--shadow-lg); transform:translateY(-1px); }
+.pat-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.pat-kind { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+  padding:3px 9px; border-radius:20px; }
+.pat-title { font-size:14px; font-weight:600; letter-spacing:-.1px; }
+.pat-detail { font-size:12.5px; color:var(--text-sec); margin-top:6px; line-height:1.55; }
+.pat-ids { font-size:11px; color:var(--text-muted); margin-top:8px; font-family:ui-monospace,Menlo,monospace; }
+.pat-why { font-size:11.5px; color:var(--text-muted); margin-top:14px; line-height:1.6; }
+
 /* RECOGNITION */
 .kud-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-bottom:18px; }
 .kud-stat { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
@@ -730,6 +743,14 @@ body {
 
   <!-- CRITICAL -->
   <div class="panel" id="panel-critical">
+    <div class="card" id="patternCard" style="display:none;">
+      <div class="card-title"><i class="ti ti-affiliate"></i> Patterns across reports</div>
+      <div class="card-sub">Repeats, spikes and near-duplicates. No single report says any of this.</div>
+      <div id="patternList"></div>
+      <div class="pat-why" id="patternWhy"></div>
+    </div>
+
+    <div class="card-title" style="margin-bottom:12px;"><i class="ti ti-alert-triangle"></i> Individual reports</div>
     <div id="criticalList"></div>
   </div>
 
@@ -1000,7 +1021,7 @@ function isoWeek(iso) {
 }
 
 // Shared state
-const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
+const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], patterns:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
 
 function setBusy(isBusy) {
   document.body.style.cursor = isBusy ? 'progress' : '';
@@ -1164,6 +1185,13 @@ function renderExecSummary(metrics, submissions) {
     points.push({
       icon: 'ti-building', tone: 'neutral',
       text: `<strong>${esc(hotspot[0])}</strong> accounts for ${hotspotShare}% of all reports.`
+    });
+  }
+  if (state.patterns && state.patterns.length) {
+    const top = state.patterns[0];
+    points.push({
+      icon: 'ti-affiliate', tone: top.sensitive ? 'critical' : 'warning',
+      text: `<strong>${esc(top.headline)}</strong> — ${esc(top.detail)}`
     });
   }
   if (state.awaitingReply && state.awaitingReply.length) {
@@ -1704,7 +1732,6 @@ function renderFeedFilters(categoryCounts) {
       });
       if (active) {
         renderComplaints('allFeed', state.submissions);
-    loadRecognition();
       } else {
         button.dataset.on = '1';
         button.style.outline = '2px solid ' + prioStyle(p).colour;
@@ -1816,6 +1843,9 @@ async function loadAll(options) {
     renderCritical(state.alerts);
     renderFeedFilters(metrics.categoryCounts || {});
     renderComplaints('allFeed', state.submissions);
+
+    loadRecognition();
+    loadPatterns();
 
     const criticalBadge = document.querySelector('.nav-item[data-nav="critical"] .nav-badge');
     if (criticalBadge) { criticalBadge.textContent = state.alerts.length; }
@@ -2291,6 +2321,86 @@ document.getElementById('mineReplyForm').addEventListener('submit', async functi
     button.textContent = 'Send reply';
   }
 });
+
+
+/* ----------------------------- PATTERNS -----------------------------
+ * A list of reports leaves the reader to notice that six of them name the
+ * same team. That noticing is the job.
+ * -------------------------------------------------------------------- */
+var PATTERN_STYLE = {
+  cluster:   { colour: '#dc2626', tint: '#fdeeee', label: 'Repeat' },
+  spike:     { colour: '#d97706', tint: '#fef6e7', label: 'Rising' },
+  duplicate: { colour: '#2a78d6', tint: '#dbeafe', label: 'Same issue' }
+};
+
+async function loadPatterns() {
+  var card = document.getElementById('patternCard');
+  if (!card) { return; }
+
+  try {
+    var data = await SpeakUpApi.dashboard.patterns(
+      Object.assign({ days: 90 }, state.filters));
+    state.patterns = data.patterns || [];
+    renderPatterns(data);
+  } catch (error) {
+    // Only a permission failure should hide the card silently; anything else
+    // is a bug and was being swallowed.
+    card.style.display = 'none';
+    if (error.status !== 403 && error.status !== 401) {
+      console.warn('pattern load failed:', error);
+    }
+  }
+}
+
+function renderPatterns(data) {
+  var card = document.getElementById('patternCard');
+  var host = document.getElementById('patternList');
+  var patterns = data.patterns || [];
+
+  if (!patterns.length) {
+    card.style.display = '';
+    host.innerHTML = emptyState('No repeating patterns in the last ' + data.windowDays + ' days.');
+    document.getElementById('patternWhy').textContent = '';
+    return;
+  }
+
+  card.style.display = '';
+  host.innerHTML = patterns.map(function (p) {
+    var style = PATTERN_STYLE[p.kind] || PATTERN_STYLE.duplicate;
+    return '<div class="pat" data-pattern="' + esc(p.id) + '" style="--pat-colour:' + style.colour + '">' +
+      '<div class="pat-head">' +
+        '<span class="pat-kind" style="background:' + style.tint + ';color:' + style.colour + ';">' +
+          esc(style.label) + '</span>' +
+        '<span class="pat-title">' + esc(p.headline) + '</span>' +
+        (p.sensitive ? '<span class="pat-kind" style="background:#fdeeee;color:#dc2626;">sensitive</span>' : '') +
+      '</div>' +
+      '<div class="pat-detail">' + esc(p.detail) + '</div>' +
+      (p.submissionIds ? '<div class="pat-ids">' + p.submissionIds.slice(0, 6).map(esc).join('  ') +
+        (p.submissionIds.length > 6 ? '  +' + (p.submissionIds.length - 6) + ' more' : '') + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  // State the rules: a reader has to be able to judge whether a pattern is
+  // real, not take the label on trust.
+  var t = data.thresholds;
+  document.getElementById('patternWhy').textContent =
+    'A repeat needs ' + t.minimumCluster + '+ reports on one department and category. ' +
+    'A rise needs at least ' + t.spikeFloor + ' reports and ' + t.spikeMultiple + 'x the previous ' +
+    data.windowDays + ' days. Same-issue grouping needs ' + Math.round(t.duplicateOverlap * 100) +
+    '% shared key phrases within one category.';
+
+  host.querySelectorAll('.pat[data-pattern]').forEach(function (node) {
+    node.addEventListener('click', function () {
+      var id = node.getAttribute('data-pattern');
+      var pattern = (state.patterns || []).find(function (p) { return p.id === id; });
+      if (!pattern || !pattern.submissionIds) { return; }
+      var list = state.submissions.filter(function (s) {
+        return pattern.submissionIds.indexOf(s.id) !== -1;
+      });
+      openModalWith(pattern.headline, PATTERN_STYLE[pattern.kind].colour, list);
+    });
+  });
+}
 
 /* ----------------------------- SESSION ----------------------------- */
 

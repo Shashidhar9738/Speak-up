@@ -33,6 +33,7 @@ const audit = require("./services/auditService");
 const notifications = require("./services/notificationService");
 const mail = require("./services/mailService");
 const webhooks = require("./services/webhookService");
+const patterns = require("./services/patternService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -224,6 +225,7 @@ function buildApiInventory() {
       { method: "GET", path: "/api/dashboard/awaiting-reply", purpose: "Reports where the reporter is waiting on an answer" },
       { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
       { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
+      { method: "GET", path: "/api/dashboard/patterns", purpose: "Repeat clusters, spikes and near-duplicates" },
       { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
       { method: "GET", path: "/api/integrations/hris/webhook", purpose: "Outbound webhook contract and status" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
@@ -1306,6 +1308,22 @@ app.get("/api/integrations/hris/webhook", requireAdmin, requireOwner, (request, 
     verify: "Recompute the HMAC over the exact bytes received and compare in constant time.",
     note: "Complaint text is never sent. Metadata only — come back and read the report here, where the role rules still apply."
   });
+});
+
+/**
+ * Detected patterns. Restricted to roles that can see sensitive reports: a
+ * pattern names a department and a count, which in a small team can identify
+ * the person being complained about even without the report text.
+ */
+app.get("/api/dashboard/patterns", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot view detected patterns"));
+  }
+
+  const filtered = await scopedSubmissions(request.user, request.query);
+  const result = patterns.detect(filtered, { days: Number(request.query.days) || undefined });
+
+  return response.json(result);
 });
 
 app.get("/api/todo/apis", (request, response) => {

@@ -171,6 +171,26 @@ word-boundary stem matching, so `pressur` matches pressure/pressured/pressuring.
    stated reason so a reviewer can see *why* something is P1
 4. **Key phrases** — adjacent word pairs ranked above single words
 
+### Patterns
+
+Individual reports are only half the picture: five P3s about one manager is a
+problem no single report states. `GET /api/dashboard/patterns` detects three
+things, all by counting rather than by a model, so a claim can be explained to
+the person it is about:
+
+| Pattern | Trigger |
+|---|---|
+| **Repeat** | 3+ reports on the same department and category |
+| **Rising** | a category at 2x the previous window, minimum 4 reports |
+| **Same issue** | 50%+ shared key phrases within one category |
+
+The thresholds are returned with the results and shown in the UI, so a reader
+can judge whether a pattern is real rather than taking the label on trust.
+
+Restricted to roles that can see sensitive reports: a pattern names a
+department and a count, which in a small team can identify the person being
+complained about even without the report text.
+
 | Priority | Target | Triggers |
 |---|---|---|
 | P1 | 24 hours | harassment, retaliation, discrimination, fraud, unsafe, threats |

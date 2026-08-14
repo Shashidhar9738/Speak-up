@@ -295,6 +295,9 @@
       heatmap: function (query) {
         return request("/api/dashboard/heatmap" + toQueryString(query), { auth: true });
       },
+      patterns: function (query) {
+        return request("/api/dashboard/patterns" + toQueryString(query), { auth: true });
+      },
       awaitingReply: function (query) {
         return request("/api/dashboard/awaiting-reply" + toQueryString(query), { auth: true });
       },
