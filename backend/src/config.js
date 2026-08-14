@@ -101,10 +101,25 @@ module.exports = {
   // sensitive categories, which stay with owners and reviewers.
   defaultRole: process.env.SPEAKUP_DEFAULT_ROLE || "staff",
 
-  // With no SMTP configured the verification code cannot be emailed. In
-  // development it is surfaced in the API response so the flow is testable;
-  // in production that would hand anyone an account, so it is refused instead.
+  // Outbound email, used only for dashboard accounts — never to contact a
+  // reporter, who has no address on file by design.
+  //   SPEAKUP_SMTP_URL=smtps://user:pass@smtp.gmail.com:465
+  smtpUrl: process.env.SPEAKUP_SMTP_URL || "",
+  mailFrom: process.env.SPEAKUP_MAIL_FROM || "SpeakUp <noreply@localhost>",
   smtpConfigured: Boolean(process.env.SPEAKUP_SMTP_URL),
+
+  // Outbound webhooks for HRIS/ticketing. Generic on purpose: coding to one
+  // vendor guesses wrong for the others.
+  webhookUrl: process.env.SPEAKUP_WEBHOOK_URL || "",
+  webhookSecret: process.env.SPEAKUP_WEBHOOK_SECRET || "",
+  webhookEvents: (process.env.SPEAKUP_WEBHOOK_EVENTS || "")
+    .split(",").map((e) => e.trim()).filter(Boolean),
+  webhookTimeoutMs: Number(process.env.SPEAKUP_WEBHOOK_TIMEOUT_MS || 5000),
+
+  // Local HTTPS. Point these at a cert to serve TLS directly; behind a proxy
+  // that terminates TLS (Render, nginx) leave them unset.
+  tlsKeyFile: process.env.SPEAKUP_TLS_KEY || "",
+  tlsCertFile: process.env.SPEAKUP_TLS_CERT || "",
   authSecret: resolveAuthSecret(nodeEnv),
   tokenTtlHours: Number(process.env.SPEAKUP_TOKEN_TTL_HOURS || 12),
   // "*" is a development convenience. In production an explicit origin (or

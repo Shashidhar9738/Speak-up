@@ -31,6 +31,8 @@ const { validatePassword, hashPassword, MIN_LENGTH } = require("./services/passw
 const appreciation = require("./services/appreciationService");
 const audit = require("./services/auditService");
 const notifications = require("./services/notificationService");
+const mail = require("./services/mailService");
+const webhooks = require("./services/webhookService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -223,11 +225,11 @@ function buildApiInventory() {
       { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
       { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
       { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
+      { method: "GET", path: "/api/integrations/hris/webhook", purpose: "Outbound webhook contract and status" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
       { method: "GET", path: "/api/todo/apis", purpose: "API inventory and backlog" }
     ],
     backlog: [
-      { method: "POST", path: "/api/integrations/hris/webhook", phase: "Phase 3", purpose: "HRIS synchronization" }
     ]
   };
 }
@@ -250,7 +252,16 @@ app.use(express.json({ limit: "1mb" }));
 app.use(applyCors);
 
 app.get("/api/health", (request, response) => {
-  response.json({ status: "ok", service: "speak-up-api", timestamp: new Date().toISOString() });
+  response.json({
+    status: "ok",
+    service: "speak-up-api",
+    timestamp: new Date().toISOString(),
+    integrations: {
+      email: mail.isConfigured(),
+      webhook: webhooks.isConfigured(),
+      tls: config.trustProxyTls || Boolean(config.tlsCertFile)
+    }
+  });
 });
 
 const REGISTRATION_HELP = {
@@ -307,6 +318,11 @@ app.post("/api/auth/password", requireAdmin, async (request, response, next) => 
   }
 
   await setPassword(request.user.email, next_);
+  audit.record("account.password_changed", request.user.email, {});
+  // A password changing without the owner knowing is how an account takeover
+  // goes unnoticed; best effort, never blocking the change itself.
+  mail.sendPasswordChanged(request.user.email).catch(() => {});
+
   return response.json({ changed: true, message: "Password updated." });
 });
 
@@ -349,15 +365,23 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
     passwordPolicy: `At least ${MIN_LENGTH} characters.`
   };
 
-  // Returning the code to the caller is a development affordance only. Doing it
-  // in production would let anyone register any colleague's address and read
-  // every complaint, so it is withheld and the request fails loudly instead.
-  if (!config.smtpConfigured) {
-    if (config.isProduction) {
+  if (result.code) {
+    if (config.smtpConfigured) {
+      const delivery = await mail.sendVerificationCode(email, result.code, config.verificationTtlMinutes);
+      if (!delivery.sent) {
+        return next(createHttpError(502, "Could not send the verification email. Try again shortly."));
+      }
+    } else if (config.isProduction) {
+      // Returning the code to the caller would let anyone register a
+      // colleague's address and read every complaint.
       return next(createHttpError(503, "Email delivery is not configured, so registration cannot be completed."));
+    } else {
+      payload.devVerificationCode = result.code;
+      payload.message += " (SMTP is not configured; code shown here for local testing only.)";
     }
-    payload.devVerificationCode = result.code;
-    payload.message += " (SMTP is not configured; code returned here for local testing only.)";
+  } else if (result.autoApproved) {
+    payload.status = "approved";
+    payload.message = "Account created. You can sign in now.";
   }
 
   return response.status(201).json(payload);
@@ -540,6 +564,9 @@ app.post("/api/submissions", submissionRateLimiter, validateSubmissionRequest, a
       console.warn("[speakup] could not mirror positive submission into recognition:", error.message);
     }
   }
+
+  // Fire and forget: a slow HRIS must not hold up the person filing a report.
+  webhooks.emitAsync(webhooks.EVENTS.CREATED, created);
 
   // accessCode is returned exactly once, here. It is not recoverable later —
   // only its hash is stored, which is what keeps the reporter unidentifiable.
@@ -767,6 +794,9 @@ app.post("/api/submissions/:id/status", requireAdmin, validateStatusUpdateReques
   // The reporter has no email, so the notice waits for them on the tracking
   // page rather than being sent anywhere.
   notifications.announceStatus(updated.id, status, request.validated.note);
+  webhooks.emitAsync(
+    status === "resolved" ? webhooks.EVENTS.RESOLVED : webhooks.EVENTS.STATUS,
+    updated, { previousStatus: existing.status });
 
   return response.json({ submission: publicSubmission(updated) });
 });
@@ -1099,6 +1129,9 @@ app.post("/api/submissions/:id/escalate", requireAdmin, async (request, response
 
   audit.record(withdraw ? "submission.escalation_withdrawn" : "submission.escalated",
     request.user.email, { id: updated.id, to: withdraw ? null : target });
+  if (!withdraw) {
+    webhooks.emitAsync(webhooks.EVENTS.ESCALATED, updated, { escalatedTo: target });
+  }
 
   // The reporter is told it moved, but not to whom — naming the destination
   // could identify who is handling it in a small function.
@@ -1260,6 +1293,19 @@ app.get("/api/dashboard/export.pdf", requireAdmin, async (request, response, nex
   const range = request.query.days ? `last ${request.query.days} days` : null;
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   return response.send(briefingHtml(request.user, metrics, filtered, escalated, range));
+});
+
+/**
+ * What the webhook sends, so an integrator does not have to read the source or
+ * trigger a real complaint to find out.
+ */
+app.get("/api/integrations/hris/webhook", requireAdmin, requireOwner, (request, response) => {
+  response.json({
+    ...webhooks.describe(),
+    signature: "HMAC-SHA256 of the raw body, sent as X-SpeakUp-Signature: sha256=<hex>",
+    verify: "Recompute the HMAC over the exact bytes received and compare in constant time.",
+    note: "Complaint text is never sent. Metadata only — come back and read the report here, where the role rules still apply."
+  });
 });
 
 app.get("/api/todo/apis", (request, response) => {
