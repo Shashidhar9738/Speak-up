@@ -308,8 +308,22 @@
       heatmap: function (query) {
         return request("/api/dashboard/heatmap" + toQueryString(query), { auth: true });
       },
+      insights: function (query) {
+        return request("/api/dashboard/insights" + toQueryString(query), { auth: true });
+      },
       timeline: function (id) {
         return request("/api/submissions/" + encodeURIComponent(id) + "/timeline", { auth: true });
+      },
+      // Duplicates are linked, not combined: each reporter keeps their own
+      // thread, so this only records the relationship.
+      merge: function (id, into) {
+        return request("/api/submissions/" + encodeURIComponent(id) + "/merge", {
+          method: "POST", auth: true,
+          body: into === null ? { merge: false } : { into: into }
+        });
+      },
+      related: function (id) {
+        return request("/api/submissions/" + encodeURIComponent(id) + "/related", { auth: true });
       },
       assign: function (id, to, dueAt) {
         return request("/api/submissions/" + encodeURIComponent(id) + "/assign", {

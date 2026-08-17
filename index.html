@@ -496,6 +496,34 @@ body {
 .pwd-alert.error { background: var(--danger-light); color: #991b1b; }
 .pwd-alert.ok { background: var(--success-light); color: #065f46; }
 
+/* LINKED CASES */
+.link-note { font-size:11.5px; color:var(--text-muted); margin-top:9px; line-height:1.55; }
+.linked-chip { font-size:10.5px; font-weight:600; padding:3px 9px; border-radius:20px;
+  background:#ede9fe; color:#4a3aa7; }
+
+/* INSIGHTS */
+.ins-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:6px; }
+.ins-tile { border:1px solid var(--border); border-radius:var(--radius); padding:15px 17px; background:var(--card); }
+.ins-num { font-size:25px; font-weight:700; letter-spacing:-1px; font-variant-numeric:tabular-nums; }
+.ins-label { font-size:11.5px; color:var(--text-sec); margin-top:3px; }
+.ins-trend { font-size:11px; font-weight:600; margin-top:7px; display:inline-flex; align-items:center; gap:4px;
+  padding:2px 8px; border-radius:6px; }
+.t-faster { background:var(--success-light); color:var(--success); }
+.t-slower { background:var(--danger-light); color:var(--danger); }
+.t-steady { background:var(--card-alt); color:var(--text-muted); }
+.t-no_comparison { background:var(--card-alt); color:var(--text-muted); }
+
+.risk { border:1px solid var(--border); border-left:3px solid var(--risk-colour,#98a1b0);
+  border-radius:var(--radius-sm); padding:14px 16px; margin-bottom:9px; background:var(--card); }
+.risk-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.risk-dept { font-size:14px; font-weight:600; }
+.risk-level { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px;
+  padding:3px 9px; border-radius:20px; }
+.risk-score { margin-left:auto; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--text-muted); }
+.risk-reasons { font-size:12.5px; color:var(--text-sec); margin-top:7px; line-height:1.55; }
+.ins-caveat { font-size:11.5px; color:var(--text-muted); margin-top:14px; line-height:1.6;
+  padding-top:12px; border-top:1px solid var(--border-soft); }
+
 /* ACTION PLANS */
 .plan { border:1px solid var(--border); border-left:3px solid var(--plan-colour,var(--accent));
   border-radius:var(--radius-sm); padding:15px 17px; margin-bottom:10px; background:var(--card); }
@@ -918,6 +946,19 @@ body {
   </div>
 
   <div class="panel" id="panel-trends">
+    <div class="card" id="insCard" style="display:none;">
+      <div class="card-title"><i class="ti ti-stopwatch"></i> How fast are we responding</div>
+      <div class="card-sub">Median, not average — one report left for weeks would hide that most are answered the same day.</div>
+      <div class="ins-grid" id="insTiles"></div>
+    </div>
+
+    <div class="card" id="riskCard" style="display:none;">
+      <div class="card-title"><i class="ti ti-users-minus"></i> Where people may be about to leave</div>
+      <div class="card-sub">A signal for where to look, not a forecast.</div>
+      <div id="riskList"></div>
+      <div class="ins-caveat" id="insCaveat"></div>
+    </div>
+
     <div class="card">
       <div class="card-title"><i class="ti ti-trending-up"></i> Category trend by week</div>
       <div class="chart-holder h-trend"><canvas id="trendChart"></canvas></div>
@@ -1095,7 +1136,7 @@ function isoWeek(iso) {
 }
 
 // Shared state
-const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], patterns:[], plans:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
+const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], patterns:[], plans:[], insights:null, filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
 
 function setBusy(isBusy) {
   document.body.style.cursor = isBusy ? 'progress' : '';
@@ -1269,6 +1310,15 @@ function renderExecSummary(metrics, submissions) {
     points.push({
       icon: 'ti-affiliate', tone: top.sensitive ? 'critical' : 'warning',
       text: `<strong>${esc(top.headline)}</strong> — ${esc(top.detail)}`
+    });
+  }
+  if (state.insights && state.insights.responseTimes && state.insights.responseTimes.neverAnswered) {
+    const never = state.insights.responseTimes.neverAnswered;
+    const oldest = state.insights.responseTimes.oldestUnanswered;
+    points.push({
+      icon: 'ti-message-off', tone: 'critical',
+      text: `<strong>${never} report${never > 1 ? 's have' : ' has'} never been answered</strong>` +
+            (oldest ? `, the oldest waiting ${oldest} days.` : '.')
     });
   }
   if (state.awaitingReply && state.awaitingReply.length) {
@@ -1585,6 +1635,7 @@ function complaintCard(submission) {
         <span class="phrase-tag" style="background:${style.bg};color:${style.color};font-weight:600;">${esc(submission.category)}</span>
         ${keywords.map(k => `<span class="phrase-tag" style="background:${style.bg};color:${style.color};">${esc(k)}</span>`).join('')}
         <span class="phrase-tag" style="background:#f3f4f6;color:#6b7280;">${esc(submission.department)}</span>
+        ${submission.mergedInto ? `<span class="linked-chip" title="Linked to ${esc(submission.mergedInto)}"><i class="ti ti-link"></i> linked</span>` : ''}
         <span class="complaint-time">${esc(timeAgo(submission.createdAt))} &middot; ${esc(submission.priority)} &middot; ${esc(submission.status)}</span>
       </div>
       ${state.scope && state.scope.canRespond === false ? '' : `
@@ -1924,6 +1975,7 @@ async function loadAll(options) {
     loadRecognition();
     loadPatterns();
     loadPlans();
+    loadInsights();
 
     const criticalBadge = document.querySelector('.nav-item[data-nav="critical"] .nav-badge');
     if (criticalBadge) { criticalBadge.textContent = state.alerts.length; }
@@ -2455,8 +2507,16 @@ function renderPatterns(data) {
       '<div class="pat-detail">' + esc(p.detail) + '</div>' +
       (p.submissionIds ? '<div class="pat-ids">' + p.submissionIds.slice(0, 6).map(esc).join('  ') +
         (p.submissionIds.length > 6 ? '  +' + (p.submissionIds.length - 6) + ' more' : '') + '</div>' : '') +
-      '<div class="plan-actions"><button class="action-btn resolve" data-planfrom="' + esc(p.id) +
-        '"><i class="ti ti-checklist"></i> Open an action plan</button></div>' +
+      '<div class="plan-actions">' +
+        '<button class="action-btn resolve" data-planfrom="' + esc(p.id) +
+          '"><i class="ti ti-checklist"></i> Open an action plan</button>' +
+        (p.kind === 'duplicate' && p.submissionIds && p.submissionIds.length > 1
+          ? '<button class="action-btn" data-linkfrom="' + esc(p.id) +
+            '"><i class="ti ti-link"></i> Link as one case</button>' : '') +
+      '</div>' +
+      (p.kind === 'duplicate'
+        ? '<div class="link-note">Linking keeps each reporter\'s own thread and access code — ' +
+          'they are still answered individually. It stops one issue being counted several times.</div>' : '') +
     '</div>';
   }).join('');
 
@@ -2468,6 +2528,37 @@ function renderPatterns(data) {
     'A rise needs at least ' + t.spikeFloor + ' reports and ' + t.spikeMultiple + 'x the previous ' +
     data.windowDays + ' days. Same-issue grouping needs ' + Math.round(t.duplicateOverlap * 100) +
     '% shared key phrases within one category.';
+
+  host.querySelectorAll('button[data-linkfrom]').forEach(function (button) {
+    button.addEventListener('click', async function (event) {
+      event.stopPropagation();
+      var pattern = (state.patterns || []).find(function (p) {
+        return p.id === button.getAttribute('data-linkfrom');
+      });
+      if (!pattern || !pattern.submissionIds || pattern.submissionIds.length < 2) { return; }
+
+      // The oldest is the primary: it is the one already being worked on.
+      var ids = pattern.submissionIds.slice();
+      var primary = ids[0];
+      var rest = ids.slice(1);
+
+      if (!window.confirm('Link ' + rest.length + ' report' + (rest.length > 1 ? 's' : '') +
+          ' to ' + primary + '?\n\nEach reporter keeps their own thread and code. ' +
+          'This stops one issue being counted ' + ids.length + ' times.')) { return; }
+
+      button.disabled = true;
+      button.textContent = 'Linking…';
+      try {
+        for (var i = 0; i < rest.length; i += 1) {
+          await SpeakUpApi.dashboard.merge(rest[i], primary);
+        }
+        await loadAll();
+      } catch (error) {
+        alert(error.message || 'Could not link those reports.');
+        button.disabled = false;
+      }
+    });
+  });
 
   host.querySelectorAll('button[data-planfrom]').forEach(function (button) {
     button.addEventListener('click', function (event) {
@@ -2642,6 +2733,99 @@ function planFromPattern(pattern) {
   document.getElementById('planDept').value = pattern.department || '';
   document.getElementById('planCat').value = pattern.category || '';
   document.getElementById('planTitle').focus();
+}
+
+
+/* ----------------------------- INSIGHTS -----------------------------
+ * Two numbers a COO asks for that nothing was measuring, and a risk signal
+ * that shows its reasoning rather than asserting a score.
+ * -------------------------------------------------------------------- */
+var RISK_STYLE = {
+  elevated: { colour: '#dc2626', tint: '#fdeeee' },
+  watch:    { colour: '#d97706', tint: '#fef6e7' },
+  normal:   { colour: '#059669', tint: '#e9f9f1' }
+};
+var TREND_WORDS = { faster: 'faster', slower: 'slower', steady: 'steady', no_comparison: 'no prior period' };
+
+function hoursOrDays(hours) {
+  if (hours == null) { return '—'; }
+  return hours < 48 ? hours.toFixed(1) + 'h' : (hours / 24).toFixed(1) + 'd';
+}
+
+async function loadInsights() {
+  var insCard = document.getElementById('insCard');
+  var riskCard = document.getElementById('riskCard');
+  if (!insCard) { return; }
+
+  try {
+    var data = await SpeakUpApi.dashboard.insights(
+      Object.assign({ days: 90, riskDays: 90 }, state.filters));
+    state.insights = data;
+    renderInsights(data);
+  } catch (error) {
+    insCard.style.display = 'none';
+    riskCard.style.display = 'none';
+  }
+}
+
+function renderInsights(data) {
+  var r = data.responseTimes || {};
+  var current = r.current || {};
+
+  document.getElementById('insCard').style.display = '';
+  document.getElementById('insTiles').innerHTML = [
+    {
+      num: hoursOrDays(current.firstResponseHours),
+      label: 'Median first response',
+      trend: r.firstResponseTrend
+    },
+    {
+      num: hoursOrDays(current.resolutionHours),
+      label: 'Median time to resolve',
+      trend: r.resolutionTrend
+    },
+    {
+      // Counted separately because a median cannot show them: a report nobody
+      // ever answered has no response time to include.
+      num: r.neverAnswered || 0,
+      label: 'Never answered',
+      sub: r.oldestUnanswered ? 'oldest ' + r.oldestUnanswered + ' days' : null,
+      danger: (r.neverAnswered || 0) > 0
+    },
+    {
+      num: current.resolved || 0,
+      label: 'Resolved in period'
+    }
+  ].map(function (tile) {
+    return '<div class="ins-tile">' +
+      '<div class="ins-num tnum"' + (tile.danger ? ' style="color:var(--danger);"' : '') + '>' +
+        esc(tile.num) + '</div>' +
+      '<div class="ins-label">' + esc(tile.label) + '</div>' +
+      (tile.trend ? '<div class="ins-trend t-' + esc(tile.trend) + '">' + esc(TREND_WORDS[tile.trend] || tile.trend) + '</div>' : '') +
+      (tile.sub ? '<div class="ins-label" style="margin-top:6px;">' + esc(tile.sub) + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  var risks = data.attritionRisk || [];
+  document.getElementById('riskCard').style.display = '';
+  document.getElementById('riskList').innerHTML = risks.length
+    ? risks.map(function (risk) {
+        var style = RISK_STYLE[risk.level] || RISK_STYLE.normal;
+        return '<div class="risk" style="--risk-colour:' + style.colour + '">' +
+          '<div class="risk-head">' +
+            '<span class="risk-dept">' + esc(risk.department) + '</span>' +
+            '<span class="risk-level" style="background:' + style.tint + ';color:' + style.colour + ';">' +
+              esc(risk.level) + '</span>' +
+            '<span class="risk-score">' + esc(risk.score) + '/100</span>' +
+          '</div>' +
+          // The reasons matter more than the score: a reader should be able to
+          // disagree with the logic, not just the number.
+          '<div class="risk-reasons">' + esc(risk.reasons.join(' · ')) + '</div>' +
+        '</div>';
+      }).join('')
+    : emptyState('No department is showing elevated risk.');
+
+  document.getElementById('insCaveat').textContent = data.caveat || '';
 }
 
 /* ----------------------------- SESSION ----------------------------- */

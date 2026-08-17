@@ -59,6 +59,9 @@ async function loadPage(page, options = {}) {
       awaitingReply: async () => ({ count: 0, submissions: [] }),
       patterns: async () => ({ windowDays: 30, detected: 0, patterns: [], thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 } }),
       timeline: async () => ({ events: [], stages: [], currentStage: "submitted", elapsedDays: 0 }),
+      insights: async () => ({ responseTimes: { windowDays: 30, current: {}, previous: {}, neverAnswered: 0, oldestUnanswered: 0 }, attritionRisk: [], caveat: "" }),
+      merge: async () => ({ submission: {} }),
+      related: async () => ({ primaryId: "TKT-1", count: 1, submissions: [] }),
       assign: async () => ({ submission: {} }),
       categories: async () => ({ categories: [] }),
       trends: async () => ({ trends: [] }),
@@ -613,6 +616,96 @@ test("a new plan can be opened straight from a pattern", async () => {
   // The pattern's context should carry over rather than being retyped.
   assert.match(window.document.getElementById("planTitle").value, /Harassment in Sales/);
   assert.equal(window.document.getElementById("planDept").value, "Sales");
+});
+
+/* ---------------- insights and linking ---------------- */
+
+test("response times are shown, and never-answered separately", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        insights: async () => ({
+          responseTimes: {
+            windowDays: 30,
+            current: { firstResponseHours: 6.2, resolutionHours: 96, resolved: 4 },
+            previous: { firstResponseHours: 12 },
+            firstResponseTrend: "faster", resolutionTrend: "steady",
+            neverAnswered: 3, oldestUnanswered: 11
+          },
+          attritionRisk: [],
+          caveat: "A signal, not a forecast."
+        })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 90));
+
+  const card = window.document.getElementById("insCard");
+  assert.notEqual(card.style.display, "none", "insights hidden from an owner");
+  assert.match(card.textContent, /6\.2h/, "median first response not shown");
+  // The median cannot represent a report nobody answered, so it is its own number.
+  assert.match(card.textContent, /Never answered/);
+  assert.match(card.textContent, /oldest 11 days/);
+});
+
+test("attrition risk shows its reasoning, not just a score", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        insights: async () => ({
+          responseTimes: { windowDays: 30, current: {}, previous: {}, neverAnswered: 0, oldestUnanswered: 0 },
+          attritionRisk: [{
+            department: "Sales", level: "elevated", score: 95,
+            reasons: ["6 still unresolved", "5 past the response target"]
+          }],
+          caveat: "A signal for where to look, not a forecast."
+        })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 90));
+
+  const card = window.document.getElementById("riskCard");
+  assert.match(card.textContent, /Sales/);
+  assert.match(card.textContent, /6 still unresolved/,
+    "the score is shown without the reasoning behind it");
+  assert.match(card.textContent, /not a forecast/i,
+    "nothing states that this is a signal rather than a prediction");
+});
+
+test("only duplicate patterns offer linking", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        patterns: async () => ({
+          windowDays: 30, detected: 2,
+          thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 },
+          patterns: [
+            { kind: "duplicate", id: "d1", headline: "2 people reported the same issue",
+              detail: "x", submissionIds: ["TKT-1", "TKT-2"], score: 40 },
+            { kind: "cluster", id: "c1", headline: "5 reports in Sales",
+              detail: "y", submissionIds: ["TKT-3", "TKT-4"], score: 90 }
+          ]
+        })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 90));
+
+  const buttons = [...window.document.querySelectorAll("button[data-linkfrom]")];
+  assert.equal(buttons.length, 1, "linking offered on something that is not a duplicate");
+  assert.equal(buttons[0].getAttribute("data-linkfrom"), "d1");
+
+  // Reporters must not be told their conversation is being merged with others.
+  const host = window.document.getElementById("patternList");
+  assert.match(host.textContent, /keeps each reporter/i,
+    "nothing explains that threads stay separate");
 });
 
 /* ---------------- markup without styling ---------------- */
