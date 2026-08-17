@@ -412,7 +412,14 @@ function buildMetrics(submissions) {
       department: submission.department
     }));
 
+  // Counted over every unresolved report, not over the truncated
+  // priorityIssues list — counting within a slice of 8 silently caps the
+  // number at 8 no matter how many there are.
+  const unresolved = sorted.filter((s) => s.status !== "resolved");
+  const criticalOpen = unresolved.filter((s) => s.priority === "P1" || s.priority === "P2").length;
+
   return {
+    criticalOpen,
     totals: {
       submissions: total,
       open: statusCounts.open,

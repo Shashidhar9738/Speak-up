@@ -18,6 +18,17 @@ backend/data/
 backend/backups/
 backend/certs/
 
+# UI screenshots — useful locally, but binary and regenerable.
+test-artifacts/
+frontend_backup/
+snapshots/
+
+# There is one package.json, at the root. A second one inside backend/ forks
+# the dependency tree and its scripts resolve to paths that do not exist.
+backend/package.json
+backend/package-lock.json
+backend/node_modules/
+
 npm-debug.log*
 *.log
 .DS_Store

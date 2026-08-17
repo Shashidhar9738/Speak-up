@@ -606,7 +606,7 @@ body {
 
   <div class="nav-group">
     <div class="nav-label">Action</div>
-    <a class="nav-item" data-nav="critical"><i class="ti ti-alert-triangle"></i> Critical issues <span class="nav-badge red">8</span></a>
+    <a class="nav-item" data-nav="critical"><i class="ti ti-alert-triangle"></i> Flagged &amp; sensitive <span class="nav-badge red">0</span></a>
     <a class="nav-item" data-nav="feed"><i class="ti ti-list"></i> All complaints <span class="nav-badge blue">42</span></a>
     <a class="nav-item" data-nav="recognition"><i class="ti ti-confetti"></i> Recognition <span class="nav-badge blue" id="kudBadge">0</span></a>
     <a class="nav-item" data-nav="mine"><i class="ti ti-ticket"></i> Track my report</a>
@@ -1045,9 +1045,12 @@ function emptyState(message) {
 function renderStats(metrics) {
   var totals = metrics.totals || {};
   var trend = metrics.weeklyTrend || [];
-  var critical = (metrics.priorityIssues || []).filter(function (i) {
-    return i.priority === 'P1' || i.priority === 'P2';
-  }).length;
+  // priorityIssues is truncated for display; counting within it caps at 8.
+  var critical = metrics.criticalOpen != null
+    ? metrics.criticalOpen
+    : (metrics.priorityIssues || []).filter(function (i) {
+        return i.priority === 'P1' || i.priority === 'P2';
+      }).length;
   var negative = (metrics.sentimentCounts || {}).negative || 0;
 
   // Week-over-week movement is the number a CXO acts on — but the current week
@@ -1071,7 +1074,7 @@ function renderStats(metrics) {
       icon: 'ti-inbox', iconBg: 'var(--danger-light)', iconColor: 'var(--danger)' },
     { num: totals.resolved || 0, label: 'Resolved', trend: resolvedPct + '% of total', dir: 'down',
       icon: 'ti-circle-check', iconBg: 'var(--success-light)', iconColor: 'var(--success)' },
-    { num: critical, label: 'Critical open', trend: critical ? 'needs review' : 'all clear',
+    { num: critical, label: 'P1/P2 unresolved', trend: critical ? 'needs review' : 'all clear',
       dir: critical ? 'up' : 'flat',
       icon: 'ti-alert-triangle', iconBg: 'var(--warning-light)', iconColor: 'var(--warning)' },
     { num: negPct + '%', label: 'Negative sentiment', trend: negative + ' reports', dir: 'flat',

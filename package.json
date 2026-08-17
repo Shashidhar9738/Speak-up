@@ -14,7 +14,8 @@
     "test": "node --test backend/tests/ui.test.js",
     "backup": "node backend/scripts/backup.js",
     "set-password": "node backend/scripts/set-password.js",
-    "tls:generate": "node backend/scripts/generate-tls.js"
+    "tls:generate": "node backend/scripts/generate-tls.js",
+    "snapshot": "node backend/scripts/snapshot.js"
   },
   "keywords": [],
   "author": "",
