@@ -84,6 +84,13 @@ function migrate() {
       escalation_note  TEXT,
       -- Ownership is separate from escalation: a case can have an owner
       -- without being escalated, and vice versa.
+      -- Reports about the same underlying issue are LINKED, never combined.
+      -- Each reporter keeps their own access code and their own thread; the
+      -- alternative would put several people into one conversation, and any
+      -- of them could then read what the others wrote.
+      merged_into      TEXT,
+      merged_by        TEXT,
+      merged_at        TEXT,
       assigned_to      TEXT,
       assigned_by      TEXT,
       assigned_at      TEXT,

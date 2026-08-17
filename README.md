@@ -249,6 +249,58 @@ difference, which is the anonymity promise made legible rather than asserted.
 
 ---
 
+## Linked cases
+
+Duplicate detection without a way to act on it just means four tickets instead
+of one. Reports about the same issue are **linked, never combined**:
+
+```
+POST /api/submissions/:id/merge   { "into": "TKT-XXXX-XXXX" }
+GET  /api/submissions/:id/related
+```
+
+Each reporter keeps their own access code and their own thread. Merging the
+conversations would put several people into one, where any of them could read
+what the others wrote. Linked duplicates drop out of the feed and the counts so
+one issue is reported once, but every reporter is still answered individually.
+Merges are one level deep — a chain would make "which case is this part of"
+depend on traversal order.
+
+## Insights
+
+`GET /api/dashboard/insights` returns two things, both deliberately modest.
+
+**Response times** use the median, not the mean: one report left for three
+weeks would drag an average enough to hide that most are answered same-day.
+Cases never answered at all are counted separately, because the median hides
+them completely.
+
+**Attrition risk** is a signal for where to look, never a forecast. It scores
+each department on resignation language, unresolved volume, negative tone and
+missed response targets, and lists the reasons alongside the score so a reader
+can disagree with the reasoning rather than only the conclusion. It will not
+produce a number like "73% likely to lose four people" — that implies evidence
+that does not exist.
+
+## Retention
+
+```bash
+SPEAKUP_RETENTION_DAYS=365
+npm run purge            # dry run
+npm run purge -- --apply
+```
+
+Disabled by default. Deletes only **resolved** cases past the period, measured
+from when they were resolved rather than submitted. Open, acknowledged and
+escalated cases are never touched at any age.
+
+Data no longer held cannot be leaked, subpoenaed, or read by a future
+administrator with different intentions. For a whistleblowing tool, eventually
+forgetting protects the reporter more than keeping does. The audit log records
+that a purge happened and never what it removed.
+
+---
+
 ## Deploying
 
 `render.yaml` is included. On [render.com](https://render.com): **New →

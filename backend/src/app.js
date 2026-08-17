@@ -36,6 +36,7 @@ const webhooks = require("./services/webhookService");
 const patterns = require("./services/patternService");
 const timeline = require("./services/timelineService");
 const actionPlans = require("./services/actionPlanService");
+const insights = require("./services/insightService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -127,11 +128,17 @@ function filterSubmissions(submissions, query) {
   // cannot inflate counts or pollute the word cloud. ?includeSpam=true opts in
   // for a review queue.
   const includeSpam = String(query.includeSpam || "").toLowerCase() === "true";
+  // A report linked to another is still readable on its own, but counting it
+  // in the feed would report one issue as several.
+  const includeMerged = String(query.includeMerged || "").toLowerCase() === "true";
   const range = resolveDateRange(query);
 
   return submissions.filter((submission) => {
     const isSpam = submission.quarantined === true || submission.flags?.spam === true;
     if (isSpam && !includeSpam) {
+      return false;
+    }
+    if (submission.mergedInto && !includeMerged) {
       return false;
     }
 
@@ -233,6 +240,9 @@ function buildApiInventory() {
       { method: "GET", path: "/api/action-plans", purpose: "Action plans with measured impact" },
       { method: "POST", path: "/api/action-plans", purpose: "Open an action plan against a pattern" },
       { method: "POST", path: "/api/action-plans/:id", purpose: "Update an action plan" },
+      { method: "POST", path: "/api/submissions/:id/merge", purpose: "Link a duplicate to a primary case" },
+      { method: "GET", path: "/api/submissions/:id/related", purpose: "Reports linked to the same issue" },
+      { method: "GET", path: "/api/dashboard/insights", purpose: "Response times and attrition risk signals" },
       { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
       { method: "GET", path: "/api/integrations/hris/webhook", purpose: "Outbound webhook contract and status" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
@@ -1465,6 +1475,94 @@ app.post("/api/action-plans/:id", requireAdmin, async (request, response, next) 
 
   const submissions = await listSubmissions();
   return response.json({ plan: updated, impact: actionPlans.measure(updated, submissions) });
+});
+
+/* -------------------------------- MERGE --------------------------------
+ * Duplicate detection was shipped without any way to act on it, so four
+ * reports of one issue still meant four tickets.
+ *
+ * Reports are LINKED, never combined. Each reporter keeps their own access
+ * code and their own thread — merging the conversations would put several
+ * people into one, and any of them could then read what the others wrote.
+ * Every reporter is still answered individually.
+ * --------------------------------------------------------------------- */
+
+app.post("/api/submissions/:id/merge", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).respond) {
+    return next(createHttpError(403, "Your role cannot merge cases"));
+  }
+
+  const primaryId = String(request.body?.into || "").trim();
+  const child = await getSubmissionById(request.params.id);
+  const primary = primaryId ? await getSubmissionById(primaryId) : null;
+
+  if (!child || !canSeeSubmission(request.user, child)) {
+    return response.status(404).json({ error: "Submission not found" });
+  }
+
+  const unmerge = request.body?.merge === false;
+
+  if (!unmerge) {
+    if (!primary || !canSeeSubmission(request.user, primary)) {
+      return next(createHttpError(404, "The case to merge into was not found"));
+    }
+    if (primary.id === child.id) {
+      return next(createHttpError(400, "A case cannot be merged into itself"));
+    }
+    // One level only. A chain would make "which case is this really part of"
+    // depend on traversal order.
+    if (primary.mergedInto) {
+      return next(createHttpError(400,
+        `${primary.id} is itself merged into ${primary.mergedInto}. Merge into that instead.`));
+    }
+  }
+
+  const now = new Date().toISOString();
+  const updated = await updateSubmission(child.id, (current) => ({
+    ...current,
+    mergedInto: unmerge ? null : primary.id,
+    mergedBy: unmerge ? null : request.user.email,
+    mergedAt: unmerge ? null : now,
+    updatedAt: now
+  }));
+
+  audit.record(unmerge ? "submission.unmerged" : "submission.merged",
+    request.user.email, { id: child.id, into: unmerge ? null : primary.id });
+
+  return response.json({ submission: publicSubmission(updated) });
+});
+
+app.get("/api/submissions/:id/related", requireAdmin, async (request, response) => {
+  const submission = await getSubmissionById(request.params.id);
+  if (!submission || !canSeeSubmission(request.user, submission)) {
+    return response.status(404).json({ error: "Submission not found" });
+  }
+
+  const all = visibleSubmissions(request.user, await listSubmissions());
+  const rootId = submission.mergedInto || submission.id;
+  const linked = all.filter((item) => item.id === rootId || item.mergedInto === rootId);
+
+  return response.json({
+    primaryId: rootId,
+    count: linked.length,
+    // Each linked report keeps its own thread; this lists them, it does not
+    // splice the conversations together.
+    submissions: linked.map((item) => redact(request.user, item))
+  });
+});
+
+/* ------------------------------- INSIGHTS ------------------------------- */
+
+app.get("/api/dashboard/insights", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot view insights"));
+  }
+
+  const filtered = await scopedSubmissions(request.user, request.query);
+  return response.json(insights.build(filtered, {
+    responseDays: Number(request.query.days) || undefined,
+    riskDays: Number(request.query.riskDays) || undefined
+  }));
 });
 
 app.get("/api/todo/apis", (request, response) => {

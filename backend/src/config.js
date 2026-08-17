@@ -69,6 +69,11 @@ module.exports = {
   // Backing it up is copying one file.
   databaseFile: process.env.SPEAKUP_DB_FILE || path.join(__dirname, "..", "data", "speakup.db"),
 
+  // How long a resolved case is kept before npm run purge deletes it. 0
+  // disables. Data no longer held cannot be leaked or subpoenaed, which for a
+  // whistleblowing tool protects the reporter more than retention does.
+  retentionDays: Number(process.env.SPEAKUP_RETENTION_DAYS || 0),
+
   // Append-only audit trail. A file, not a table: nothing in the running app
   // can rewrite it, and it is never served over HTTP.
   auditFile: process.env.SPEAKUP_AUDIT_FILE || path.join(__dirname, "..", "data", "audit.log"),

@@ -48,6 +48,9 @@ function rowToSubmission(row, messages) {
     escalatedBy: value.escalatedBy || null,
     escalatedAt: value.escalatedAt || null,
     escalationNote: value.escalationNote || null,
+    mergedInto: value.mergedInto || null,
+    mergedBy: value.mergedBy || null,
+    mergedAt: value.mergedAt || null,
     assignedTo: value.assignedTo || null,
     assignedBy: value.assignedBy || null,
     assignedAt: value.assignedAt || null,
@@ -105,9 +108,10 @@ async function createSubmission(submission) {
       department, region, channel, quarantined,
       flag_spam, flag_urgent, flag_sensitive, browser_locale,
       access_code_hash, escalated, escalated_to, escalated_by, escalated_at,
-      escalation_note, assigned_to, assigned_by, assigned_at, due_at,
+      escalation_note, merged_into, merged_by, merged_at,
+      assigned_to, assigned_by, assigned_at, due_at,
       edited_at, edit_count, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     submission.id, submission.messageText, submission.summary, submission.category,
     JSON.stringify(submission.keywords || []), submission.sentiment,
@@ -123,6 +127,7 @@ async function createSubmission(submission) {
     submission.escalated ? 1 : 0, submission.escalatedTo || null,
     submission.escalatedBy || null, submission.escalatedAt || null,
     submission.escalationNote || null,
+    submission.mergedInto || null, submission.mergedBy || null, submission.mergedAt || null,
     submission.assignedTo || null, submission.assignedBy || null,
     submission.assignedAt || null, submission.dueAt || null,
     submission.editedAt || null, submission.editCount || 0,
@@ -169,7 +174,8 @@ async function updateSubmission(submissionId, updater) {
         status = ?, status_note = ?, department = ?, region = ?, channel = ?,
         quarantined = ?, flag_spam = ?, flag_urgent = ?, flag_sensitive = ?,
         escalated = ?, escalated_to = ?, escalated_by = ?, escalated_at = ?,
-        escalation_note = ?, assigned_to = ?, assigned_by = ?, assigned_at = ?,
+        escalation_note = ?, merged_into = ?, merged_by = ?, merged_at = ?,
+        assigned_to = ?, assigned_by = ?, assigned_at = ?,
         due_at = ?, edited_at = ?, edit_count = ?, updated_at = ?
       WHERE id = ?
     `).run(
@@ -184,6 +190,7 @@ async function updateSubmission(submissionId, updater) {
       next.flags?.spam ? 1 : 0, next.flags?.urgent ? 1 : 0, next.flags?.sensitive ? 1 : 0,
       next.escalated ? 1 : 0, next.escalatedTo || null, next.escalatedBy || null,
       next.escalatedAt || null, next.escalationNote || null,
+      next.mergedInto || null, next.mergedBy || null, next.mergedAt || null,
       next.assignedTo || null, next.assignedBy || null,
       next.assignedAt || null, next.dueAt || null,
       next.editedAt || null, next.editCount || 0,
