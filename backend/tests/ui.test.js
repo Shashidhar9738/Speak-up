@@ -58,10 +58,17 @@ async function loadPage(page, options = {}) {
       alerts: async () => ({ alerts: [] }),
       awaitingReply: async () => ({ count: 0, submissions: [] }),
       patterns: async () => ({ windowDays: 30, detected: 0, patterns: [], thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 } }),
+      timeline: async () => ({ events: [], stages: [], currentStage: "submitted", elapsedDays: 0 }),
+      assign: async () => ({ submission: {} }),
       categories: async () => ({ categories: [] }),
       trends: async () => ({ trends: [] }),
       heatmap: async () => ({ heatmap: {} }),
       exportCsv: async () => new window.Blob([""])
+    },
+    actionPlans: {
+      list: async () => ({ summary: { open: 0, overdue: 0, done: 0, working: 0 }, owners: ["hr", "legal"], plans: [] }),
+      create: async () => ({ plan: {}, impact: {} }),
+      update: async () => ({ plan: {}, impact: {} })
     },
     admin: { users: async () => ({ users: [] }), decide: async () => ({}) }
   };
@@ -539,6 +546,73 @@ test("staff never sees the pattern card", async () => {
   await new Promise((r) => setTimeout(r, 80));
   assert.equal(window.document.getElementById("patternCard").style.display, "none",
     "a pattern names a department and a count, which can identify people in a small team");
+});
+
+/* ---------------- action plans and journey ---------------- */
+
+test("an action plan reports whether complaints actually fell", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      actionPlans: {
+        list: async () => ({
+          summary: { open: 1, overdue: 0, done: 1, working: 1 },
+          owners: ["hr", "legal"],
+          plans: [{
+            id: "ACT-A-1", title: "Skip-level interviews in Sales", status: "done",
+            owner: "hr", department: "Sales", category: "Harassment & Ethics",
+            impact: { verdict: "improving", note: "2 reports since, against ~7 expected." }
+          }]
+        }),
+        create: async () => ({ plan: {}, impact: {} }),
+        update: async () => ({ plan: {}, impact: {} })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 80));
+
+  const panel = window.document.getElementById("panel-plans");
+  assert.match(panel.textContent, /Skip-level interviews in Sales/);
+  // The point of the feature: not that a plan exists, but whether it worked.
+  assert.match(panel.textContent, /Complaints are falling/,
+    "the plan does not report its measured impact");
+  assert.match(panel.textContent, /Measurably worked/,
+    "the summary does not count plans that moved the number");
+});
+
+test("staff never sees action plans", async () => {
+  const window = await dashboardAs("staff");
+  assert.ok(!visibleTabs(window).includes("plans"),
+    "staff can open action plans, which name departments and patterns");
+});
+
+test("a new plan can be opened straight from a pattern", async () => {
+  const window = await loadPage("index.html", {
+    api: {
+      isSignedIn: () => true,
+      me: async () => ({ user: { email: "o@comviva.com", role: "owner" }, scope: scopeFor("owner") }),
+      dashboard: {
+        patterns: async () => ({
+          windowDays: 30, detected: 1,
+          thresholds: { minimumCluster: 3, spikeMultiple: 2, spikeFloor: 4, duplicateOverlap: 0.5 },
+          patterns: [{ kind: "cluster", id: "c1", headline: "5 reports about Harassment in Sales",
+            detail: "4 unresolved.", department: "Sales", category: "Harassment & Ethics",
+            submissionIds: ["TKT-1"], score: 90 }]
+        })
+      }
+    }
+  });
+  await new Promise((r) => setTimeout(r, 90));
+
+  const button = window.document.querySelector("button[data-planfrom]");
+  assert.ok(button, "no way to turn a pattern into a plan");
+  button.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 40));
+
+  // The pattern's context should carry over rather than being retyped.
+  assert.match(window.document.getElementById("planTitle").value, /Harassment in Sales/);
+  assert.equal(window.document.getElementById("planDept").value, "Sales");
 });
 
 /* ---------------- markup without styling ---------------- */

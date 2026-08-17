@@ -163,6 +163,19 @@
       return request("/api/auth/registration-status?email=" + encodeURIComponent(email));
     },
 
+    // Action plans: what was decided about a pattern, and whether it worked.
+    actionPlans: {
+      list: function () { return request("/api/action-plans", { auth: true }); },
+      create: function (payload) {
+        return request("/api/action-plans", { method: "POST", auth: true, body: payload });
+      },
+      update: function (id, changes) {
+        return request("/api/action-plans/" + encodeURIComponent(id), {
+          method: "POST", auth: true, body: changes
+        });
+      }
+    },
+
     admin: {
       users: function () {
         return request("/api/admin/users", { auth: true });
@@ -294,6 +307,14 @@
       },
       heatmap: function (query) {
         return request("/api/dashboard/heatmap" + toQueryString(query), { auth: true });
+      },
+      timeline: function (id) {
+        return request("/api/submissions/" + encodeURIComponent(id) + "/timeline", { auth: true });
+      },
+      assign: function (id, to, dueAt) {
+        return request("/api/submissions/" + encodeURIComponent(id) + "/assign", {
+          method: "POST", auth: true, body: { to: to, dueAt: dueAt }
+        });
       },
       patterns: function (query) {
         return request("/api/dashboard/patterns" + toQueryString(query), { auth: true });

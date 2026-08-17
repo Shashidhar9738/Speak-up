@@ -496,6 +496,30 @@ body {
 .pwd-alert.error { background: var(--danger-light); color: #991b1b; }
 .pwd-alert.ok { background: var(--success-light); color: #065f46; }
 
+/* ACTION PLANS */
+.plan { border:1px solid var(--border); border-left:3px solid var(--plan-colour,var(--accent));
+  border-radius:var(--radius-sm); padding:15px 17px; margin-bottom:10px; background:var(--card); }
+.plan-head { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.plan-title { font-size:14px; font-weight:600; letter-spacing:-.1px; flex:1; min-width:180px; }
+.plan-chip { font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+.plan-detail { font-size:12.5px; color:var(--text-sec); margin-top:7px; line-height:1.55; }
+.plan-meta { display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--text-muted); margin-top:10px; }
+.plan-impact { margin-top:11px; padding:10px 12px; border-radius:9px; font-size:12px; line-height:1.5; }
+.imp-improving, .imp-resolved { background:var(--success-light); color:#065f46; }
+.imp-worsening { background:var(--danger-light); color:#991b1b; }
+.imp-unchanged { background:var(--warning-light); color:#92400e; }
+.imp-too_early { background:var(--card-alt); color:var(--text-muted); }
+.plan-actions { display:flex; gap:6px; margin-top:11px; flex-wrap:wrap; }
+.plan-form { background:var(--card-alt); border:1px dashed var(--border); border-radius:var(--radius-sm);
+  padding:16px; margin-bottom:16px; display:none; }
+.plan-form.show { display:block; }
+.plan-form label { display:block; font-size:12px; font-weight:500; margin:10px 0 5px; }
+.plan-form input, .plan-form select, .plan-form textarea {
+  width:100%; font-family:var(--font); font-size:13px; color:var(--text);
+  border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:#fff; }
+.plan-form textarea { min-height:64px; resize:vertical; }
+.plan-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
 /* PATTERNS */
 .pat { border:1px solid var(--border); border-left:3px solid var(--pat-colour,var(--accent));
   border-radius:var(--radius-sm); padding:15px 17px; margin-bottom:10px; background:var(--card);
@@ -609,6 +633,7 @@ body {
     <a class="nav-item" data-nav="critical"><i class="ti ti-alert-triangle"></i> Flagged &amp; sensitive <span class="nav-badge red">0</span></a>
     <a class="nav-item" data-nav="feed"><i class="ti ti-list"></i> All complaints <span class="nav-badge blue">42</span></a>
     <a class="nav-item" data-nav="recognition"><i class="ti ti-confetti"></i> Recognition <span class="nav-badge blue" id="kudBadge">0</span></a>
+    <a class="nav-item" data-nav="plans"><i class="ti ti-checklist"></i> Action plans <span class="nav-badge blue" id="planBadge">0</span></a>
     <a class="nav-item" data-nav="mine"><i class="ti ti-ticket"></i> Track my report</a>
   </div>
 
@@ -672,6 +697,7 @@ body {
     <div class="tab" data-tab="critical"><i class="ti ti-alert-triangle"></i> Critical</div>
     <div class="tab" data-tab="feed"><i class="ti ti-list"></i> Feed</div>
       <div class="tab" data-tab="recognition"><i class="ti ti-confetti"></i> Recognition</div>
+    <div class="tab" data-tab="plans"><i class="ti ti-checklist"></i> Actions</div>
     <div class="tab" data-tab="mine"><i class="ti ti-ticket"></i> My report</div>
     <div class="tab" data-tab="trends"><i class="ti ti-trending-up"></i> Trends</div>
   </div>
@@ -792,6 +818,54 @@ body {
           <div id="kudCategories"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-plans">
+    <div class="kud-grid" id="planStats"></div>
+
+    <div class="card">
+      <div class="card-title"><i class="ti ti-checklist"></i> Action plans</div>
+      <div class="card-sub">What was decided about a pattern, and whether complaints actually fell afterwards.</div>
+
+      <button class="action-btn resolve" id="planNewBtn" style="margin-bottom:14px;">
+        <i class="ti ti-plus"></i> New action plan</button>
+
+      <form class="plan-form" id="planForm">
+        <label for="planTitle">What will be done</label>
+        <input type="text" id="planTitle" required minlength="5" placeholder="e.g. Skip-level interviews across Sales, monthly review">
+
+        <label for="planDetail">Detail</label>
+        <textarea id="planDetail" placeholder="Who is involved, what changes, how it will be checked"></textarea>
+
+        <div class="plan-row">
+          <div>
+            <label for="planOwner">Owner</label>
+            <select id="planOwner"></select>
+          </div>
+          <div>
+            <label for="planDue">Target date</label>
+            <input type="date" id="planDue">
+          </div>
+        </div>
+        <div class="plan-row">
+          <div>
+            <label for="planDept">Department</label>
+            <input type="text" id="planDept" placeholder="Sales">
+          </div>
+          <div>
+            <label for="planCat">Category</label>
+            <input type="text" id="planCat" placeholder="Harassment &amp; Ethics">
+          </div>
+        </div>
+        <div class="plan-actions">
+          <button type="submit" class="action-btn resolve" id="planSave">Open plan</button>
+          <button type="button" class="action-btn" id="planCancel">Cancel</button>
+        </div>
+        <div class="pwd-alert error" id="planError"></div>
+      </form>
+
+      <div id="planList"></div>
     </div>
   </div>
 
@@ -1021,7 +1095,7 @@ function isoWeek(iso) {
 }
 
 // Shared state
-const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], patterns:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
+const state = { metrics:null, submissions:[], alerts:[], awaitingReply:[], patterns:[], plans:[], filters:{}, charts:{}, scope:{}, unfilteredTotal:0 };
 
 function setBusy(isBusy) {
   document.body.style.cursor = isBusy ? 'progress' : '';
@@ -1849,6 +1923,7 @@ async function loadAll(options) {
 
     loadRecognition();
     loadPatterns();
+    loadPlans();
 
     const criticalBadge = document.querySelector('.nav-item[data-nav="critical"] .nav-badge');
     if (criticalBadge) { criticalBadge.textContent = state.alerts.length; }
@@ -2039,11 +2114,11 @@ document.addEventListener('click', function (event) {
  * role may not do, so hiding a tab is never the access control itself.
  * --------------------------------------------------------------------- */
 var ROLE_UI = {
-  owner:    { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','mine'],
+  owner:    { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','plans','mine'],
               briefing: 'exec', title: 'Leadership dashboard' },
-  reviewer: { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','mine'],
+  reviewer: { tabs: ['overview','categories','heatmap','critical','feed','recognition','trends','plans','mine'],
               briefing: 'exec', title: 'Review dashboard' },
-  lead:     { tabs: ['overview','categories','heatmap','feed','recognition','trends','mine'],
+  lead:     { tabs: ['overview','categories','heatmap','feed','recognition','trends','plans','mine'],
               briefing: 'exec', title: 'Department dashboard' },
   staff:    { tabs: ['overview','categories','heatmap','trends','recognition','mine'],
               briefing: 'staff', title: 'Employee view' },
@@ -2380,6 +2455,8 @@ function renderPatterns(data) {
       '<div class="pat-detail">' + esc(p.detail) + '</div>' +
       (p.submissionIds ? '<div class="pat-ids">' + p.submissionIds.slice(0, 6).map(esc).join('  ') +
         (p.submissionIds.length > 6 ? '  +' + (p.submissionIds.length - 6) + ' more' : '') + '</div>' : '') +
+      '<div class="plan-actions"><button class="action-btn resolve" data-planfrom="' + esc(p.id) +
+        '"><i class="ti ti-checklist"></i> Open an action plan</button></div>' +
     '</div>';
   }).join('');
 
@@ -2392,6 +2469,16 @@ function renderPatterns(data) {
     data.windowDays + ' days. Same-issue grouping needs ' + Math.round(t.duplicateOverlap * 100) +
     '% shared key phrases within one category.';
 
+  host.querySelectorAll('button[data-planfrom]').forEach(function (button) {
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      var pattern = (state.patterns || []).find(function (p) {
+        return p.id === button.getAttribute('data-planfrom');
+      });
+      if (pattern) { planFromPattern(pattern); }
+    });
+  });
+
   host.querySelectorAll('.pat[data-pattern]').forEach(function (node) {
     node.addEventListener('click', function () {
       var id = node.getAttribute('data-pattern');
@@ -2403,6 +2490,158 @@ function renderPatterns(data) {
       openModalWith(pattern.headline, PATTERN_STYLE[pattern.kind].colour, list);
     });
   });
+}
+
+
+/* --------------------------- ACTION PLANS ---------------------------
+ * The loop nobody closes: a pattern is spotted, someone reads it, and no
+ * record survives of what was decided. Six months later nobody can say
+ * whether the cluster was addressed or just stopped being looked at.
+ * ------------------------------------------------------------------- */
+var IMPACT_WORDS = {
+  resolved:  'Complaints have stopped',
+  improving: 'Complaints are falling',
+  unchanged: 'No measurable change yet',
+  worsening: 'Complaints have increased',
+  too_early: 'Too early to judge'
+};
+var PLAN_COLOUR = { open: '#d97706', in_progress: '#2a78d6', done: '#059669', abandoned: '#98a1b0' };
+
+async function loadPlans() {
+  var host = document.getElementById('planList');
+  if (!host) { return; }
+
+  try {
+    var data = await SpeakUpApi.actionPlans.list();
+    state.plans = data.plans || [];
+
+    var select = document.getElementById('planOwner');
+    if (select && !select.options.length) {
+      select.innerHTML = (data.owners || []).map(function (o) {
+        return '<option value="' + esc(o) + '">' + esc(o.replace(/_/g, ' ')) + '</option>';
+      }).join('');
+    }
+
+    renderPlans(data);
+  } catch (error) {
+    if (error.status === 403) {
+      document.getElementById('panel-plans').innerHTML =
+        '<div class="card">' + emptyState('Your role cannot view action plans.') + '</div>';
+    }
+  }
+}
+
+function renderPlans(data) {
+  var summary = data.summary || {};
+  var badge = document.getElementById('planBadge');
+  if (badge) { badge.textContent = summary.open || 0; }
+
+  document.getElementById('planStats').innerHTML = [
+    { n: summary.open || 0, l: 'Open' },
+    { n: summary.overdue || 0, l: 'Past target date' },
+    { n: summary.done || 0, l: 'Completed' },
+    { n: summary.working || 0, l: 'Measurably worked' }
+  ].map(function (st) {
+    return '<div class="kud-stat"><div class="kud-stat-num tnum">' + esc(st.n) +
+           '</div><div class="kud-stat-label">' + esc(st.l) + '</div></div>';
+  }).join('');
+
+  var host = document.getElementById('planList');
+  var plans = data.plans || [];
+
+  host.innerHTML = plans.length ? plans.map(function (p) {
+    var impact = p.impact || {};
+    var overdue = p.dueAt && new Date(p.dueAt) < new Date() && p.status !== 'done';
+    return '<div class="plan" style="--plan-colour:' + (PLAN_COLOUR[p.status] || '#98a1b0') + '">' +
+      '<div class="plan-head">' +
+        '<span class="plan-title">' + esc(p.title) + '</span>' +
+        '<span class="plan-chip" style="background:' + (PLAN_COLOUR[p.status] || '#98a1b0') +
+          '1a;color:' + (PLAN_COLOUR[p.status] || '#98a1b0') + ';">' + esc(p.status.replace(/_/g, ' ')) + '</span>' +
+        (overdue ? '<span class="plan-chip" style="background:#fdeeee;color:#dc2626;">past target</span>' : '') +
+      '</div>' +
+      (p.detail ? '<div class="plan-detail">' + esc(p.detail) + '</div>' : '') +
+      '<div class="plan-meta">' +
+        '<span>' + esc(p.id) + '</span>' +
+        '<span>owner: ' + esc(p.owner.replace(/_/g, ' ')) + '</span>' +
+        (p.department ? '<span>' + esc(p.department) + '</span>' : '') +
+        (p.category ? '<span>' + esc(p.category) + '</span>' : '') +
+        (p.dueAt ? '<span>due ' + esc(p.dueAt.slice(0, 10)) + '</span>' : '') +
+      '</div>' +
+      '<div class="plan-impact imp-' + esc(impact.verdict || 'too_early') + '">' +
+        '<strong>' + esc(IMPACT_WORDS[impact.verdict] || '') + '</strong> — ' + esc(impact.note || '') +
+      '</div>' +
+      '<div class="plan-actions">' +
+        (p.status !== 'in_progress' && p.status !== 'done'
+          ? '<button class="action-btn" data-plan="' + esc(p.id) + '" data-planact="in_progress">Start</button>' : '') +
+        (p.status !== 'done'
+          ? '<button class="action-btn ack" data-plan="' + esc(p.id) + '" data-planact="done">Mark done</button>' : '') +
+        (p.status !== 'abandoned' && p.status !== 'done'
+          ? '<button class="action-btn" data-plan="' + esc(p.id) + '" data-planact="abandoned">Drop</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('') : emptyState('No action plans yet. Open one from a detected pattern.');
+}
+
+document.getElementById('planNewBtn').addEventListener('click', function () {
+  document.getElementById('planForm').classList.toggle('show');
+});
+document.getElementById('planCancel').addEventListener('click', function () {
+  document.getElementById('planForm').classList.remove('show');
+});
+
+document.getElementById('planForm').addEventListener('submit', async function (event) {
+  event.preventDefault();
+  var errorBox = document.getElementById('planError');
+  errorBox.classList.remove('show');
+
+  var button = document.getElementById('planSave');
+  button.disabled = true;
+
+  try {
+    await SpeakUpApi.actionPlans.create({
+      title: document.getElementById('planTitle').value.trim(),
+      detail: document.getElementById('planDetail').value.trim(),
+      owner: document.getElementById('planOwner').value,
+      dueAt: document.getElementById('planDue').value
+        ? new Date(document.getElementById('planDue').value).toISOString() : null,
+      department: document.getElementById('planDept').value.trim() || null,
+      category: document.getElementById('planCat').value.trim() || null
+    });
+    this.reset();
+    this.classList.remove('show');
+    await loadPlans();
+  } catch (error) {
+    errorBox.textContent = error.message || 'Could not open the plan.';
+    errorBox.classList.add('show');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.addEventListener('click', async function (event) {
+  var button = event.target.closest('button[data-planact]');
+  if (!button) { return; }
+  button.disabled = true;
+  try {
+    await SpeakUpApi.actionPlans.update(button.getAttribute('data-plan'),
+      { status: button.getAttribute('data-planact') });
+    await loadPlans();
+  } catch (error) {
+    alert(error.message || 'Could not update the plan.');
+    button.disabled = false;
+  }
+});
+
+/** Opening a plan straight from the pattern that prompted it — the two are
+ *  only useful together. */
+function planFromPattern(pattern) {
+  var tab = document.querySelector('.tab[data-tab="plans"]');
+  if (tab) { tab.click(); }
+  document.getElementById('planForm').classList.add('show');
+  document.getElementById('planTitle').value = 'Address: ' + pattern.headline;
+  document.getElementById('planDept').value = pattern.department || '';
+  document.getElementById('planCat').value = pattern.category || '';
+  document.getElementById('planTitle').focus();
 }
 
 /* ----------------------------- SESSION ----------------------------- */

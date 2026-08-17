@@ -106,6 +106,40 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 .alert.ok { background:var(--success-light); color:#065f46; }
 
 
+/* TRUST JOURNEY — progress a reporter can see, rather than a promise they
+   have to take on faith. */
+.journey { display:flex; align-items:flex-start; margin:4px 0 20px; }
+.j-step { flex:1; text-align:center; position:relative; }
+.j-dot {
+  width:30px; height:30px; border-radius:50%; margin:0 auto 7px;
+  display:flex; align-items:center; justify-content:center; font-size:15px;
+  background:#eef1f5; color:#98a1b0; border:2px solid #eef1f5;
+  transition:background 300ms, color 300ms, border-color 300ms;
+}
+.j-step.done .j-dot { background:var(--success); color:#fff; border-color:var(--success); }
+.j-step.current .j-dot {
+  background:#fff; color:var(--accent); border-color:var(--accent);
+  box-shadow:0 0 0 4px rgba(79,70,229,.14);
+}
+.j-label { font-size:10.5px; line-height:1.35; color:var(--text-muted); padding:0 3px; }
+.j-step.done .j-label, .j-step.current .j-label { color:var(--text); font-weight:600; }
+/* The connector sits behind the dots and stops before the last step. */
+.j-step::before {
+  content:''; position:absolute; top:15px; left:-50%; width:100%; height:2px;
+  background:#eef1f5; z-index:0;
+}
+.j-step:first-child::before { display:none; }
+.j-step.done::before { background:var(--success); }
+.j-dot, .j-label { position:relative; z-index:1; }
+
+.sla-line {
+  font-size:11.5px; padding:9px 12px; border-radius:9px; margin-bottom:16px;
+  display:flex; align-items:center; gap:7px;
+}
+.sla-ok { background:var(--success-light); color:#065f46; }
+.sla-risk { background:var(--warning-light); color:#92400e; }
+.sla-late { background:var(--danger-light); color:#991b1b; }
+
 .footer-note { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 20px; }
 .footer-note a { color: var(--text-sec); }
 </style>
@@ -158,6 +192,9 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
     </form>
 
     <div class="result" id="result">
+      <div class="journey" id="journey"></div>
+      <div id="slaLine"></div>
+
       <div class="status-row">
         <span class="status-pill" id="statusPill">—</span>
         <span class="prio-pill" id="prioPill" style="display:none;"></span>
@@ -296,6 +333,7 @@ function render(data) {
     (s.sla ? ' <span class="sla">· target ' + esc(s.sla) + '</span>' : '') +
     (s.statusNote ? ' — ' + esc(s.statusNote) : '');
 
+  renderJourney(data);
   document.getElementById('summaryText').textContent = s.summary;
   document.getElementById('tags').innerHTML =
     [s.category].concat(s.keywords || [])
@@ -448,6 +486,51 @@ document.getElementById('replyForm').addEventListener('submit', async function (
 });
 
 
+
+/**
+ * Where the report has actually reached. A reporter who hands over something
+ * frightening and then sees nothing has no way to tell whether it was read or
+ * ignored; this shows the difference.
+ */
+function renderJourney(data) {
+  var host = document.getElementById('journey');
+  var journey = data.journey;
+  if (!host || !journey) { return; }
+
+  var current = journey.currentStage;
+  var passed = true;
+
+  host.innerHTML = journey.stages.map(function (stage) {
+    var isCurrent = stage.key === current;
+    var cls = stage.reached ? (isCurrent ? 'j-step done current' : 'j-step done') : 'j-step';
+    return '<div class="' + cls + '">' +
+      '<div class="j-dot"><i class="ti ' + esc(stage.icon) + '"></i></div>' +
+      '<div class="j-label">' + esc(stage.label) + '</div>' +
+    '</div>';
+  }).join('');
+
+  // The target is shown to the reporter too: a commitment nobody can see is
+  // not a commitment.
+  var sla = data.sla;
+  var line = document.getElementById('slaLine');
+  if (!sla || sla.settled) {
+    line.innerHTML = sla && sla.settled
+      ? '<div class="sla-line sla-ok"><i class="ti ti-circle-check"></i> Closed after ' +
+        esc(journey.elapsedDays) + ' day' + (journey.elapsedDays === 1 ? '' : 's') + '.</div>'
+      : '';
+    return;
+  }
+
+  var hours = Math.round(Math.abs(sla.remainingMs) / 3600000);
+  var when = hours > 48 ? Math.round(hours / 24) + ' days' : hours + ' hours';
+
+  line.innerHTML = sla.breached
+    ? '<div class="sla-line sla-late"><i class="ti ti-clock-exclamation"></i> Past the ' +
+      esc(sla.targetHours) + '-hour target by ' + esc(when) + '. You can reply below to chase it.</div>'
+    : '<div class="sla-line ' + (sla.atRisk ? 'sla-risk' : 'sla-ok') + '"><i class="ti ti-clock"></i> ' +
+      'Leadership aims to respond within ' + esc(sla.targetHours) + ' hours — about ' +
+      esc(when) + ' remaining.</div>';
+}
 </script>
 </body>
 </html>

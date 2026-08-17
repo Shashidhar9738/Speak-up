@@ -207,6 +207,48 @@ throat-clearing still surfaces its real point.
 
 ---
 
+## From pattern to outcome
+
+The loop most tools leave open: a pattern is spotted, someone reads it, and no
+record survives of what was decided. Six months later nobody can say whether
+the cluster was addressed or simply stopped being looked at.
+
+```
+report -> pattern detected -> action plan -> measured impact
+```
+
+An action plan links a pattern to an owner and a target date, and captures the
+complaint count for that department and category **at the moment it opens**.
+That baseline is never recalculated — measuring against a moving number would
+let a plan look effective because the comparison window shifted.
+
+After 14 days it reports one of: complaints stopped, falling, unchanged, or
+increased. Before 14 days it says so rather than guessing.
+
+`GET /api/action-plans` returns each plan with its measurement, and the summary
+counts how many completed plans actually moved the number.
+
+## Case view
+
+`GET /api/submissions/:id/timeline` assembles the events that already existed
+but were scattered — submission, edits, replies, escalation, status changes —
+into one ordered trail, plus the SLA position.
+
+Only the latest status change survives in the record, so that event is marked
+approximate rather than pretending to know when it was first acknowledged.
+
+Reporters see the same progress as five plain stages on the tracking page:
+
+```
+Submitted -> Seen by leadership -> Under review -> Action taken -> Resolved
+```
+
+An anonymous reporter who hands over something frightening and then sees
+nothing has no way to tell whether it was read or ignored. This shows the
+difference, which is the anonymity promise made legible rather than asserted.
+
+---
+
 ## Deploying
 
 `render.yaml` is included. On [render.com](https://render.com): **New →

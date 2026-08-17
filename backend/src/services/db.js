@@ -22,6 +22,8 @@ const config = require("../config");
  *   appreciations  Recognition. Names the RECIPIENT, and the nominator only if
  *                  they chose to be credited on the form.
  *   notifications  In-app notices for reporters, keyed by submission.
+ *   action_plans   What was decided about a detected pattern, and whether it
+ *                  actually reduced complaints.
  *   rate_limits    Request counters. Persisted, so a limit can no longer be
  *                  bypassed by waiting for the process to restart.
  *
@@ -80,6 +82,12 @@ function migrate() {
       escalated_by     TEXT,
       escalated_at     TEXT,
       escalation_note  TEXT,
+      -- Ownership is separate from escalation: a case can have an owner
+      -- without being escalated, and vice versa.
+      assigned_to      TEXT,
+      assigned_by      TEXT,
+      assigned_at      TEXT,
+      due_at           TEXT,
       edited_at        TEXT,
       edit_count       INTEGER NOT NULL DEFAULT 0,
       created_at       TEXT NOT NULL,
@@ -149,6 +157,29 @@ function migrate() {
       created_at    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_notif_sub ON notifications(submission_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS action_plans (
+      id             TEXT PRIMARY KEY,
+      title          TEXT NOT NULL,
+      detail         TEXT,
+      pattern_id     TEXT,
+      department     TEXT,
+      category       TEXT,
+      owner          TEXT NOT NULL,
+      owner_note     TEXT,
+      status         TEXT NOT NULL DEFAULT 'open',
+      due_at         TEXT,
+      created_by     TEXT NOT NULL,
+      -- Captured when the plan opens and never recalculated: measuring
+      -- against a moving number would let a plan look effective simply
+      -- because the comparison window shifted.
+      baseline_count INTEGER NOT NULL DEFAULT 0,
+      baseline_from  TEXT NOT NULL,
+      completed_at   TEXT,
+      created_at     TEXT NOT NULL,
+      updated_at     TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_plan_status ON action_plans(status);
 
     CREATE TABLE IF NOT EXISTS rate_limits (
       bucket   TEXT PRIMARY KEY,

@@ -34,6 +34,8 @@ const notifications = require("./services/notificationService");
 const mail = require("./services/mailService");
 const webhooks = require("./services/webhookService");
 const patterns = require("./services/patternService");
+const timeline = require("./services/timelineService");
+const actionPlans = require("./services/actionPlanService");
 const {
   ROLE_LABELS,
   capabilitiesFor,
@@ -226,6 +228,11 @@ function buildApiInventory() {
       { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
       { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
       { method: "GET", path: "/api/dashboard/patterns", purpose: "Repeat clusters, spikes and near-duplicates" },
+      { method: "GET", path: "/api/submissions/:id/timeline", purpose: "Case timeline, stages and SLA position" },
+      { method: "POST", path: "/api/submissions/:id/assign", purpose: "Assign a case owner and due date" },
+      { method: "GET", path: "/api/action-plans", purpose: "Action plans with measured impact" },
+      { method: "POST", path: "/api/action-plans", purpose: "Open an action plan against a pattern" },
+      { method: "POST", path: "/api/action-plans/:id", purpose: "Update an action plan" },
       { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
       { method: "GET", path: "/api/integrations/hris/webhook", purpose: "Outbound webhook contract and status" },
       { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
@@ -619,9 +626,14 @@ app.post("/api/track/:id", submissionRateLimiter, async (request, response, next
 
   const notices = notifications.forSubmission(submission.id);
   notifications.markRead(submission.id);
+  const journey = timeline.build(submission);
 
   return response.json({
     notifications: notices,
+    // Where the report has actually reached. The anonymity promise is easier
+    // to believe when progress is visible than when it is asserted.
+    journey: { stages: journey.stages, currentStage: journey.currentStage, elapsedDays: journey.elapsedDays },
+    sla: timeline.slaStatus(submission),
     submission: {
       id: submission.id,
       status: submission.status,
@@ -1324,6 +1336,135 @@ app.get("/api/dashboard/patterns", requireAdmin, async (request, response, next)
   const result = patterns.detect(filtered, { days: Number(request.query.days) || undefined });
 
   return response.json(result);
+});
+
+/* ------------------------------- CASE VIEW ------------------------------- */
+
+app.get("/api/submissions/:id/timeline", requireAdmin, async (request, response) => {
+  const submission = await getSubmissionById(request.params.id);
+  if (!submission || !canSeeSubmission(request.user, submission)) {
+    return response.status(404).json({ error: "Submission not found" });
+  }
+
+  audit.recordRead(request, [submission.id]);
+  return response.json({
+    ...timeline.build(submission),
+    sla: timeline.slaStatus(submission),
+    assignedTo: submission.assignedTo || null,
+    dueAt: submission.dueAt || null
+  });
+});
+
+app.post("/api/submissions/:id/assign", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).respond) {
+    return next(createHttpError(403, "Your role cannot assign cases"));
+  }
+
+  const existing = await getSubmissionById(request.params.id);
+  if (!existing || !canSeeSubmission(request.user, existing)) {
+    return response.status(404).json({ error: "Submission not found" });
+  }
+
+  const clear = request.body?.assign === false;
+  const to = String(request.body?.to || "").trim().toLowerCase();
+  if (!clear && !actionPlans.OWNERS.includes(to)) {
+    return next(createHttpError(400, `to must be one of: ${actionPlans.OWNERS.join(", ")}`));
+  }
+
+  const now = new Date().toISOString();
+  const updated = await updateSubmission(existing.id, (current) => ({
+    ...current,
+    assignedTo: clear ? null : to,
+    assignedBy: clear ? null : request.user.email,
+    assignedAt: clear ? null : now,
+    dueAt: clear ? null : (request.body?.dueAt || null),
+    updatedAt: now
+  }));
+
+  audit.record(clear ? "submission.unassigned" : "submission.assigned",
+    request.user.email, { id: updated.id, to: clear ? null : to });
+
+  return response.json({ submission: publicSubmission(updated) });
+});
+
+/* ----------------------------- ACTION PLANS ----------------------------- */
+
+app.get("/api/action-plans", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot view action plans"));
+  }
+
+  const submissions = await listSubmissions();
+  const plans = actionPlans.list();
+
+  return response.json({
+    summary: actionPlans.summarise(plans, submissions),
+    owners: actionPlans.OWNERS,
+    // Each plan carries its own measurement so the list answers "did it work"
+    // without a second call per row.
+    plans: plans.map((plan) => ({ ...plan, impact: actionPlans.measure(plan, submissions) }))
+  });
+});
+
+app.post("/api/action-plans", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot create action plans"));
+  }
+
+  const title = String(request.body?.title || "").trim();
+  if (title.length < 5) {
+    return next(createHttpError(400, "A title of at least 5 characters is required"));
+  }
+
+  const submissions = await listSubmissions();
+  const plan = actionPlans.create({
+    title,
+    detail: request.body?.detail,
+    patternId: request.body?.patternId,
+    department: request.body?.department,
+    category: request.body?.category,
+    owner: request.body?.owner,
+    ownerNote: request.body?.ownerNote,
+    dueAt: request.body?.dueAt,
+    createdBy: request.user.email
+  }, submissions);
+
+  audit.record("action_plan.created", request.user.email, {
+    id: plan.id, department: plan.department, category: plan.category
+  });
+
+  return response.status(201).json({ plan, impact: actionPlans.measure(plan, submissions) });
+});
+
+app.post("/api/action-plans/:id", requireAdmin, async (request, response, next) => {
+  if (!capabilitiesFor(request.user.role).sensitive) {
+    return next(createHttpError(403, "Your role cannot change action plans"));
+  }
+
+  const changes = {};
+  if (request.body?.status) {
+    if (!Object.values(actionPlans.STATUS).includes(request.body.status)) {
+      return next(createHttpError(400,
+        `status must be one of: ${Object.values(actionPlans.STATUS).join(", ")}`));
+    }
+    changes.status = request.body.status;
+  }
+  if (request.body?.owner) {
+    if (!actionPlans.OWNERS.includes(request.body.owner)) {
+      return next(createHttpError(400, `owner must be one of: ${actionPlans.OWNERS.join(", ")}`));
+    }
+    changes.owner = request.body.owner;
+  }
+  if (request.body?.dueAt !== undefined) { changes.dueAt = request.body.dueAt || null; }
+  if (request.body?.detail !== undefined) { changes.detail = String(request.body.detail).slice(0, 2000); }
+
+  const updated = actionPlans.update(request.params.id, changes);
+  if (!updated) { return next(createHttpError(404, "No such action plan")); }
+
+  audit.record("action_plan.updated", request.user.email, { id: updated.id, ...changes });
+
+  const submissions = await listSubmissions();
+  return response.json({ plan: updated, impact: actionPlans.measure(updated, submissions) });
 });
 
 app.get("/api/todo/apis", (request, response) => {
