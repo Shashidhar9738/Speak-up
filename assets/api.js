@@ -11,10 +11,24 @@
   var TOKEN_KEY = "speakup.admin.token";
   var EMAIL_KEY = "speakup.admin.email";
 
-  // Same-origin by default; override with <script>window.SPEAKUP_API_BASE="..."</script>
-  // when the dashboard is served from a different host than the API.
+  // Where the API lives when the pages are served from GitHub Pages. Pages can
+  // only serve static files, so the frontend and the API are on different
+  // origins in that deployment and requests must be addressed absolutely.
+  var HOSTED_API = "https://speakup-api-c4c8.onrender.com";
+
+  // Same-origin by default, which is what a local `npm start` wants: there the
+  // Express app serves these pages itself. An explicit
+  // <script>window.SPEAKUP_API_BASE="..."</script> wins over both, so a fork or
+  // a preview deployment can point somewhere else without editing this file.
   function baseUrl() {
-    return (global.SPEAKUP_API_BASE || "").replace(/\/$/, "");
+    if (global.SPEAKUP_API_BASE) {
+      return String(global.SPEAKUP_API_BASE).replace(/\/$/, "");
+    }
+    var host = (global.location && global.location.hostname) || "";
+    if (/\.github\.io$/i.test(host)) {
+      return HOSTED_API;
+    }
+    return "";
   }
 
   function getToken() {

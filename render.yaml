@@ -1,70 +1,47 @@
-# Render deployment.
+# Render service definition for the SpeakUp API.
 #
-# Render terminates TLS at its edge and gives the service a real HTTPS URL, so
-# complaint text and session tokens no longer cross the network in cleartext —
-# the thing that made local network hosting unsafe.
+# Only the API runs here. The pages are served from GitHub Pages, which can host
+# static files but cannot run Express, so the two live on different origins —
+# hence SPEAKUP_CORS_ORIGIN below and the matching HOSTED_API in assets/api.js.
 #
-# Deploy:
-#   1. render.com -> New -> Blueprint -> connect the Speak-up repo
-#   2. Render reads this file and creates the service
-#   3. Set SPEAKUP_ADMIN_EMAILS in the dashboard (see below)
-#   4. Deploy
+# This file documents the service and lets it be recreated from scratch. The
+# running service was created through the API and is not managed by a blueprint,
+# so changing values here does not change the live service on its own.
 services:
   - type: web
-    name: speakup
+    name: speakup-api
     runtime: node
+    region: singapore
     plan: free
-    buildCommand: npm ci --omit=dev
-    startCommand: node ./backend/src/server.js
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /api/health
-
-    # The free plan's filesystem is wiped on every deploy and on the idle
-    # restart, which would silently delete every complaint. A disk keeps
-    # backend/data across restarts.
-    disk:
-      name: speakup-data
-      mountPath: /var/data
-      sizeGB: 1
-
     envVars:
       - key: NODE_ENV
         value: production
 
-      # Must bind to all interfaces inside the container, or Render's proxy
-      # cannot reach the process.
+      # Without this the server binds 127.0.0.1 and Render's proxy cannot reach
+      # it: the deploy succeeds, every request times out.
       - key: SPEAKUP_HOST
         value: 0.0.0.0
 
-      # Render terminates TLS upstream; this silences the cleartext warning.
+      # TLS terminates at Render's proxy, so the app sees plain HTTP and would
+      # otherwise warn that submissions cross the network unencrypted.
       - key: SPEAKUP_BEHIND_TLS
-        value: "true"
+        value: true
 
-      # Generated once by Render and kept across deploys. Never commit a real
-      # secret — production refuses to boot without one, by design.
-      - key: SPEAKUP_ADMIN_SECRET
-        generateValue: true
-
-      - key: SPEAKUP_DATA_FILE
-        value: /var/data/submissions.json
-      - key: SPEAKUP_USER_FILE
-        value: /var/data/users.json
-
+      # Who may register for the dashboard. The built-in default is comviva.com,
+      # which would lock the owner of this deployment out of their own instance.
       - key: SPEAKUP_ADMIN_DOMAINS
-        value: comviva.com
+        value: gmail.com
 
-      # Set this in the Render dashboard, not here — it names real people.
-      # Without it the app falls back to its built-in demo addresses and nobody
-      # at your company can sign in.
-      - key: SPEAKUP_ADMIN_EMAILS
-        sync: false
-
-      # Same-origin in this setup, so no wildcard CORS.
+      # The Pages origin. In production an empty value means same-origin only,
+      # which would block every request the dashboard makes from github.io.
       - key: SPEAKUP_CORS_ORIGIN
-        sync: false
+        value: https://shashidhar9738.github.io
 
-      - key: SPEAKUP_TOKEN_TTL_HOURS
-        value: "12"
-      - key: SPEAKUP_AUTH_RATE_MAX
-        value: "10"
-      - key: SPEAKUP_SUBMISSION_RATE_MAX
-        value: "5"
+      # Never committed. Production refuses to boot without at least 32
+      # characters, because a known secret lets anyone mint an admin token.
+      - key: SPEAKUP_ADMIN_SECRET
+        sync: false
