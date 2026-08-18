@@ -198,62 +198,84 @@ function parseLimit(rawLimit, fallback = 50, max = 200) {
   return Math.max(1, Math.min(parsed, max));
 }
 
+// What each route is for, keyed by "METHOD /path".
+//
+// The inventory below is read from the router rather than from this map, so a
+// route that nobody described here still appears in it. Kept the other way
+// round — a hand-written list of endpoints — it silently fell a route behind,
+// which is the failure mode of every inventory maintained beside the thing it
+// describes rather than derived from it. A missing description is now a test
+// failure instead of a missing endpoint.
+const ROUTE_PURPOSE = {
+  "GET /api/health": "Health check",
+  "POST /api/auth/login": "Allowlisted admin login",
+  "POST /api/auth/validate": "Bearer token validation",
+  "POST /api/auth/logout": "Client logout helper",
+  "POST /api/auth/register": "Domain-restricted access request with password",
+  "POST /api/auth/password": "Change own password",
+  "POST /api/auth/verify": "Email verification code exchange",
+  "GET /api/auth/registration-status": "Registration state lookup",
+  "GET /api/admin/users": "Owner-only account list",
+  "POST /api/admin/users/:email/decision": "Owner-only approve/reject/revoke",
+  "GET /api/auth/me": "Authenticated admin profile",
+  "POST /api/submissions": "Anonymous submission intake with enrichment",
+  "GET /api/submissions/:id": "Single submission detail",
+  "POST /api/submissions/:id/status": "Status workflow update",
+  "GET /api/submissions/:id/messages": "Submission message thread",
+  "POST /api/submissions/:id/messages": "Append message thread item",
+  "POST /api/track/:id": "Anonymous reporter status tracking via access code",
+  "POST /api/track/:id/messages": "Anonymous reporter reply via access code",
+  "POST /api/track/:id/edit": "Reporter edits own report inside the edit window",
+  "GET /api/priority-tiers": "Keyword to priority mapping and colour codes",
+  "GET /api/appreciations/categories": "Appreciation categories",
+  "POST /api/appreciations": "Submit appreciation (open, no account)",
+  "GET /api/dashboard/appreciation": "Appreciation metrics and balance alerts",
+  "GET /api/appreciations/:id/suggested-replies": "Suggested thank-you wording",
+  "POST /api/appreciations/:id/acknowledge": "Acknowledge an appreciation",
+  "POST /api/admin/spotlights/:id": "Owner-only spotlight toggle",
+  "GET /api/export/brightspots": "Weekly recognition digest (json or html)",
+  "GET /api/dashboard/submissions": "Filtered admin submission feed",
+  "GET /api/dashboard/metrics": "Dashboard aggregate payload",
+  "GET /api/dashboard/categories": "Category distribution payload",
+  "GET /api/dashboard/trends": "Trend-only payload",
+  "GET /api/dashboard/heatmap": "Department heatmap payload",
+  "GET /api/dashboard/alerts": "High-priority alerts payload",
+  "GET /api/dashboard/awaiting-reply": "Reports where the reporter is waiting on an answer",
+  "POST /api/submissions/:id/escalate": "Route a report to compliance or legal",
+  "GET /api/dashboard/escalated": "Reports currently escalated",
+  "GET /api/dashboard/patterns": "Repeat clusters, spikes and near-duplicates",
+  "GET /api/submissions/:id/timeline": "Case timeline, stages and SLA position",
+  "POST /api/submissions/:id/assign": "Assign a case owner and due date",
+  "GET /api/action-plans": "Action plans with measured impact",
+  "POST /api/action-plans": "Open an action plan against a pattern",
+  "POST /api/action-plans/:id": "Update an action plan",
+  "POST /api/submissions/:id/merge": "Link a duplicate to a primary case",
+  "GET /api/submissions/:id/related": "Reports linked to the same issue",
+  "GET /api/dashboard/insights": "Response times and attrition risk signals",
+  "GET /api/dashboard/export.pdf": "Print-ready leadership briefing",
+  "GET /api/integrations/hris/webhook": "Outbound webhook contract and status",
+  "GET /api/dashboard/export.csv": "CSV export",
+  "GET /api/todo/apis": "API inventory and backlog",
+  "GET /api/admin/roles": "Owner-only role catalogue and per-role capabilities"
+};
+
 function buildApiInventory() {
-  return {
-    implemented: [
-      { method: "GET", path: "/api/health", purpose: "Health check" },
-      { method: "POST", path: "/api/auth/login", purpose: "Allowlisted admin login" },
-      { method: "POST", path: "/api/auth/validate", purpose: "Bearer token validation" },
-      { method: "POST", path: "/api/auth/logout", purpose: "Client logout helper" },
-      { method: "POST", path: "/api/auth/register", purpose: "Domain-restricted access request with password" },
-      { method: "POST", path: "/api/auth/password", purpose: "Change own password" },
-      { method: "POST", path: "/api/auth/verify", purpose: "Email verification code exchange" },
-      { method: "GET", path: "/api/auth/registration-status", purpose: "Registration state lookup" },
-      { method: "GET", path: "/api/admin/users", purpose: "Owner-only account list" },
-      { method: "POST", path: "/api/admin/users/:email/decision", purpose: "Owner-only approve/reject/revoke" },
-      { method: "GET", path: "/api/auth/me", purpose: "Authenticated admin profile" },
-      { method: "POST", path: "/api/submissions", purpose: "Anonymous submission intake with enrichment" },
-      { method: "GET", path: "/api/submissions/:id", purpose: "Single submission detail" },
-      { method: "POST", path: "/api/submissions/:id/status", purpose: "Status workflow update" },
-      { method: "GET", path: "/api/submissions/:id/messages", purpose: "Submission message thread" },
-      { method: "POST", path: "/api/submissions/:id/messages", purpose: "Append message thread item" },
-      { method: "POST", path: "/api/track/:id", purpose: "Anonymous reporter status tracking via access code" },
-      { method: "POST", path: "/api/track/:id/messages", purpose: "Anonymous reporter reply via access code" },
-      { method: "POST", path: "/api/track/:id/edit", purpose: "Reporter edits own report inside the edit window" },
-      { method: "GET", path: "/api/priority-tiers", purpose: "Keyword to priority mapping and colour codes" },
-      { method: "GET", path: "/api/appreciations/categories", purpose: "Appreciation categories" },
-      { method: "POST", path: "/api/appreciations", purpose: "Submit appreciation (open, no account)" },
-      { method: "GET", path: "/api/dashboard/appreciation", purpose: "Appreciation metrics and balance alerts" },
-      { method: "GET", path: "/api/appreciations/:id/suggested-replies", purpose: "Suggested thank-you wording" },
-      { method: "POST", path: "/api/appreciations/:id/acknowledge", purpose: "Acknowledge an appreciation" },
-      { method: "POST", path: "/api/admin/spotlights/:id", purpose: "Owner-only spotlight toggle" },
-      { method: "GET", path: "/api/export/brightspots", purpose: "Weekly recognition digest (json or html)" },
-      { method: "GET", path: "/api/dashboard/submissions", purpose: "Filtered admin submission feed" },
-      { method: "GET", path: "/api/dashboard/metrics", purpose: "Dashboard aggregate payload" },
-      { method: "GET", path: "/api/dashboard/categories", purpose: "Category distribution payload" },
-      { method: "GET", path: "/api/dashboard/trends", purpose: "Trend-only payload" },
-      { method: "GET", path: "/api/dashboard/heatmap", purpose: "Department heatmap payload" },
-      { method: "GET", path: "/api/dashboard/alerts", purpose: "High-priority alerts payload" },
-      { method: "GET", path: "/api/dashboard/awaiting-reply", purpose: "Reports where the reporter is waiting on an answer" },
-      { method: "POST", path: "/api/submissions/:id/escalate", purpose: "Route a report to compliance or legal" },
-      { method: "GET", path: "/api/dashboard/escalated", purpose: "Reports currently escalated" },
-      { method: "GET", path: "/api/dashboard/patterns", purpose: "Repeat clusters, spikes and near-duplicates" },
-      { method: "GET", path: "/api/submissions/:id/timeline", purpose: "Case timeline, stages and SLA position" },
-      { method: "POST", path: "/api/submissions/:id/assign", purpose: "Assign a case owner and due date" },
-      { method: "GET", path: "/api/action-plans", purpose: "Action plans with measured impact" },
-      { method: "POST", path: "/api/action-plans", purpose: "Open an action plan against a pattern" },
-      { method: "POST", path: "/api/action-plans/:id", purpose: "Update an action plan" },
-      { method: "POST", path: "/api/submissions/:id/merge", purpose: "Link a duplicate to a primary case" },
-      { method: "GET", path: "/api/submissions/:id/related", purpose: "Reports linked to the same issue" },
-      { method: "GET", path: "/api/dashboard/insights", purpose: "Response times and attrition risk signals" },
-      { method: "GET", path: "/api/dashboard/export.pdf", purpose: "Print-ready leadership briefing" },
-      { method: "GET", path: "/api/integrations/hris/webhook", purpose: "Outbound webhook contract and status" },
-      { method: "GET", path: "/api/dashboard/export.csv", purpose: "CSV export" },
-      { method: "GET", path: "/api/todo/apis", purpose: "API inventory and backlog" }
-    ],
-    backlog: [
-    ]
-  };
+  const implemented = [];
+
+  for (const layer of app.router.stack) {
+    if (!layer.route || !layer.route.path.startsWith("/api/")) { continue; }
+
+    for (const method of Object.keys(layer.route.methods)) {
+      const verb = method.toUpperCase();
+      implemented.push({
+        method: verb,
+        path: layer.route.path,
+        purpose: ROUTE_PURPOSE[`${verb} ${layer.route.path}`] || ""
+      });
+    }
+  }
+
+  return { implemented, backlog: [] };
 }
 
 const app = express();

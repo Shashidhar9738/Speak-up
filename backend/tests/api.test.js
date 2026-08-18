@@ -217,6 +217,40 @@ test("an optional field of the wrong type falls back to its default", async () =
   assert.equal(result.body.submission.channel, "web");
 });
 
+/* -------------------------------------------------------------- inventory -- */
+
+function registeredRoutes() {
+  const routes = [];
+  for (const layer of app.router.stack) {
+    if (!layer.route || !layer.route.path.startsWith("/api/")) { continue; }
+    for (const method of Object.keys(layer.route.methods)) {
+      routes.push(`${method.toUpperCase()} ${layer.route.path}`);
+    }
+  }
+  return routes.sort();
+}
+
+test("the inventory lists every route the app actually serves", async () => {
+  // The hand-written version of this list had fallen a route behind —
+  // GET /api/admin/roles was served but undocumented — with nothing to notice.
+  const result = await get("/api/todo/apis");
+
+  assert.equal(result.status, 200);
+  const listed = result.body.implemented.map((entry) => `${entry.method} ${entry.path}`).sort();
+  assert.deepEqual(listed, registeredRoutes());
+});
+
+test("every route in the inventory says what it is for", async () => {
+  const result = await get("/api/todo/apis");
+
+  const undescribed = result.body.implemented
+    .filter((entry) => !entry.purpose)
+    .map((entry) => `${entry.method} ${entry.path}`);
+
+  assert.deepEqual(undescribed, [],
+    "these routes need an entry in ROUTE_PURPOSE in backend/src/app.js");
+});
+
 /* ------------------------------------------------------------ rate limit -- */
 
 // Driven directly rather than over HTTP: every request in this file shares one
