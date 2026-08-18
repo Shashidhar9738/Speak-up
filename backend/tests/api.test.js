@@ -25,6 +25,9 @@ process.env.SPEAKUP_ADMIN_SECRET = "test-secret-not-used-anywhere-real";
 // limiter has its own tests further down, driven directly.
 process.env.SPEAKUP_SUBMISSION_RATE_MAX = "1000";
 process.env.SPEAKUP_AUTH_RATE_MAX = "1000";
+// The registration gate under test below. Both are read once, at require time.
+process.env.SPEAKUP_ADMIN_DOMAINS = "example.com";
+process.env.SPEAKUP_AUTO_APPROVE = "false";
 
 const assert = require("node:assert/strict");
 const { test, before, after } = require("node:test");
@@ -215,6 +218,52 @@ test("an optional field of the wrong type falls back to its default", async () =
   // omitting the field, which is what a field of the wrong type amounts to.
   assert.equal(result.status, 201);
   assert.equal(result.body.submission.channel, "web");
+});
+
+/* ---------------------------------------------------------- registration -- */
+
+test("with auto-approval off, a new account waits for an owner", async () => {
+  // registerUser used to branch only on requireVerification, so with the
+  // emailed code switched off it granted APPROVED and ignored this setting
+  // entirely — open dashboard access on any instance whose allowed domain is a
+  // public mail provider.
+  const result = await post("/api/auth/register", {
+    email: "newcomer@example.com",
+    fullName: "New Comer",
+    password: "a-long-enough-password-123"
+  });
+
+  assert.equal(result.status, 201);
+  assert.notEqual(result.body.status, "approved");
+  assert.equal(result.body.status, "pending_approval");
+});
+
+test("an account waiting for approval cannot sign in", async () => {
+  await post("/api/auth/register", {
+    email: "waiting@example.com",
+    fullName: "Waiting",
+    password: "a-long-enough-password-123"
+  });
+
+  const login = await post("/api/auth/login", {
+    email: "waiting@example.com",
+    password: "a-long-enough-password-123"
+  });
+
+  assert.notEqual(login.status, 200);
+  assert.equal(login.body.token, undefined, "an unapproved account was issued a token");
+});
+
+test("registration does not promise an email that is never sent", async () => {
+  // No code is issued when verification is off, so the default "we sent you a
+  // 6-digit code" message would leave the caller watching an empty inbox.
+  const result = await post("/api/auth/register", {
+    email: "nomail@example.com",
+    fullName: "No Mail",
+    password: "a-long-enough-password-123"
+  });
+
+  assert.doesNotMatch(result.body.message, /code/i);
 });
 
 /* -------------------------------------------------------------- inventory -- */

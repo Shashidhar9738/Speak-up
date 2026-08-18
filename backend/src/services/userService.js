@@ -203,14 +203,26 @@ async function registerUser({ email, fullName, reason, passwordHash }) {
     return { user: existing, code };
   }
 
+  // Verification and approval are two separate gates, and skipping the first
+  // does not imply skipping the second. This branch used to grant APPROVED
+  // whenever verification was off, ignoring config.autoApprove entirely — so an
+  // instance whose allowed domain is a public mail provider handed dashboard
+  // access, and every complaint with it, to anyone who typed an address. Only
+  // verifyUser consulted the setting, which meant it worked exactly when the
+  // emailed code was required and did nothing when it was not.
+  const verified = !config.requireVerification;
+  const approved = verified && config.autoApprove;
+
   const user = upsertUser({
     email: target, fullName: fullName || "", reason: reason || "",
     role: DEFAULT_ROLE, departments: [],
-    status: config.requireVerification ? STATUS.PENDING_VERIFICATION : STATUS.APPROVED,
+    status: verified
+      ? (approved ? STATUS.APPROVED : STATUS.PENDING_APPROVAL)
+      : STATUS.PENDING_VERIFICATION,
     source: "registration", passwordHash: passwordHash || null,
-    emailVerifiedAt: config.requireVerification ? null : now,
-    approvedBy: config.requireVerification ? null : "auto (verified corporate domain)",
-    approvedAt: config.requireVerification ? null : now,
+    emailVerifiedAt: verified ? now : null,
+    approvedBy: approved ? "auto (verified corporate domain)" : null,
+    approvedAt: approved ? now : null,
     createdAt: now, updatedAt: now
   });
 
@@ -218,8 +230,9 @@ async function registerUser({ email, fullName, reason, passwordHash }) {
     pendingCodes.set(target, { hash: hashCode(code), expiresAt: Date.now() + config.verificationTtlMinutes * 60000, attempts: 0 });
     return { user, code };
   }
-  // Verification is off: the account is live immediately and no code is issued.
-  return { user, code: null, autoApproved: true };
+  // Verification is off, so no code is issued either way. Whether the account
+  // is usable now depends on autoApprove.
+  return { user, code: null, autoApproved: approved };
 }
 
 async function verifyUser({ email, code }) {

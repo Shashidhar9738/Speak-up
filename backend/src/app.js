@@ -420,6 +420,12 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
   } else if (result.autoApproved) {
     payload.status = "approved";
     payload.message = "Account created. You can sign in now.";
+  } else {
+    // No code was issued and the account is not live: it is waiting on a human.
+    // Saying "we sent you a code" here — the payload's default — would leave
+    // them watching an inbox for a mail that is never coming.
+    payload.status = "pending_approval";
+    payload.message = "Account created. A SpeakUp owner has to approve it before you can sign in.";
   }
 
   return response.status(201).json(payload);
