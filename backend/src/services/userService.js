@@ -26,6 +26,17 @@ const STATUS = {
   REVOKED: "revoked"
 };
 
+// Why a canSignIn verdict was refused, in words. Keyed by the reason codes
+// canSignIn returns, and shared by every caller that has to explain the refusal
+// so the wording cannot drift between the login route and the auth middleware.
+const ACCESS_HELP = {
+  not_registered: "No account exists for this address. Register first.",
+  pending_verification: "Check your email and enter the verification code to continue.",
+  pending_approval: "Your account is awaiting approval from a SpeakUp owner.",
+  rejected: "This registration was declined. Contact a SpeakUp owner.",
+  revoked: "Access for this account has been revoked."
+};
+
 // Mirrors accessScopeService. New accounts default to the least-privileged
 // role, so an approval that forgets to set one cannot over-grant.
 const ROLES = { OWNER: "owner", REVIEWER: "reviewer", LEAD: "lead", STAFF: "staff", ANALYST: "analyst" };
@@ -317,6 +328,7 @@ async function canSignIn(email) {
 module.exports = {
   STATUS,
   ROLES,
+  ACCESS_HELP,
   normalizeEmail,
   emailDomain,
   isAllowedDomain,

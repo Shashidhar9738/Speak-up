@@ -10,6 +10,17 @@ const { createHttpError } = require("./errorMiddleware");
  * app ever runs more than one process against the same database.
  */
 
+// Bump the bucket and read the result in a single statement. The CASE arms are
+// the window rollover: an entry whose reset_at has passed starts again at 1 with
+// a fresh window, anything else counts up and keeps the window it had.
+// Parameters: bucket, resetAt, now, now, resetAt.
+const COUNT_SQL =
+  "INSERT INTO rate_limits (bucket, count, reset_at) VALUES (?, 1, ?) " +
+  "ON CONFLICT(bucket) DO UPDATE SET " +
+  "  count    = CASE WHEN rate_limits.reset_at <= ? THEN 1 ELSE rate_limits.count + 1 END, " +
+  "  reset_at = CASE WHEN rate_limits.reset_at <= ? THEN ? ELSE rate_limits.reset_at END " +
+  "RETURNING count, reset_at";
+
 function createRateLimiter(options) {
   const windowMs = Number(options.windowMs || 60000);
   const maxRequests = Number(options.maxRequests || 10);
@@ -21,26 +32,20 @@ function createRateLimiter(options) {
   return function rateLimitMiddleware(request, response, next) {
     const now = Date.now();
     const bucket = `${name}:${keySelector(request)}`;
-    const database = db.get();
 
     let count;
     let resetAt;
 
     try {
-      const existing = database.prepare("SELECT count, reset_at FROM rate_limits WHERE bucket = ?").get(bucket);
-
-      if (!existing || existing.reset_at <= now) {
-        resetAt = now + windowMs;
-        count = 1;
-        database.prepare(
-          "INSERT INTO rate_limits (bucket, count, reset_at) VALUES (?,?,?) " +
-          "ON CONFLICT(bucket) DO UPDATE SET count = 1, reset_at = excluded.reset_at"
-        ).run(bucket, count, resetAt);
-      } else {
-        count = existing.count + 1;
-        resetAt = existing.reset_at;
-        database.prepare("UPDATE rate_limits SET count = ? WHERE bucket = ?").run(count, bucket);
-      }
+      // One statement, so the read and the write cannot be split. Counting with
+      // a SELECT followed by an UPDATE let two processes sharing the database
+      // both read the same count and both write count + 1, spending one request
+      // of the allowance for two requests served — exactly the gap an attacker
+      // widens by running requests in parallel. SQLite serializes the upsert,
+      // and RETURNING hands back the values it settled on.
+      const row = db.get().prepare(COUNT_SQL).get(bucket, now + windowMs, now, now, now + windowMs);
+      count = row.count;
+      resetAt = row.reset_at;
     } catch (error) {
       // A limiter that fails closed would take the whole app down with the
       // database. Log and allow — availability matters more than a precise
@@ -49,11 +54,17 @@ function createRateLimiter(options) {
       return next();
     }
 
+    // Seconds, not milliseconds: every client and proxy that reads these treats
+    // the value as a UNIX timestamp in seconds, and a millisecond value reads as
+    // a date tens of thousands of years out.
     response.setHeader("X-RateLimit-Limit", String(maxRequests));
     response.setHeader("X-RateLimit-Remaining", String(Math.max(maxRequests - count, 0)));
-    response.setHeader("X-RateLimit-Reset", String(resetAt));
+    response.setHeader("X-RateLimit-Reset", String(Math.ceil(resetAt / 1000)));
 
     if (count > maxRequests) {
+      // Retry-After is the header clients actually honour, and it is a delay in
+      // seconds rather than a timestamp.
+      response.setHeader("Retry-After", String(Math.max(Math.ceil((resetAt - now) / 1000), 1)));
       return next(createHttpError(429, message));
     }
     return next();

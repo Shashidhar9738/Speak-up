@@ -58,6 +58,17 @@
     return error;
   }
 
+  // True only when the server says the session or the account itself is the
+  // problem — a token that is expired, malformed or signed wrong, or an account
+  // that has been revoked or is still awaiting approval. requireAdmin attaches
+  // details.reason to exactly those; nothing else in the API does.
+  function isSessionFailure(status, payload) {
+    if (status !== 401 && status !== 403) {
+      return false;
+    }
+    return Boolean(payload && payload.details && payload.details.reason);
+  }
+
   async function request(path, options) {
     var settings = options || {};
     var headers = { Accept: "application/json" };
@@ -84,16 +95,6 @@
       throw ApiError("Cannot reach the SpeakUp API. Is the server running?", 0);
     }
 
-    // An expired or revoked token should drop the admin back to the login page
-    // rather than leaving a half-rendered dashboard behind.
-    if ((response.status === 401 || response.status === 403) && settings.auth) {
-      clearSession();
-      if (settings.redirectOnAuthFailure !== false) {
-        global.location.href = "login.html?expired=1";
-      }
-      throw ApiError("Session expired. Please sign in again.", response.status);
-    }
-
     if (response.status === 204) {
       return null;
     }
@@ -106,6 +107,21 @@
       } catch (parseError) {
         payload = null;
       }
+    }
+
+    // An expired or revoked token should drop the admin back to the login page
+    // rather than leaving a half-rendered dashboard behind. Status alone cannot
+    // tell us that: most 401s and 403s here are ordinary refusals with a working
+    // session — "Your role cannot export complaint data", or a mistyped current
+    // password — and signing the admin out of those loses their place and blames
+    // an expiry that never happened. Only the auth middleware tags a failure
+    // with details.reason, so that marker, not the status, is what logs us out.
+    if (settings.auth && isSessionFailure(response.status, payload)) {
+      clearSession();
+      if (settings.redirectOnAuthFailure !== false) {
+        global.location.href = "login.html?expired=1";
+      }
+      throw ApiError("Session expired. Please sign in again.", response.status);
     }
 
     if (!response.ok) {

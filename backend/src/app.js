@@ -5,6 +5,8 @@ const config = require("./config");
 const { requireAdmin } = require("./middleware/authMiddleware");
 const { createRateLimiter } = require("./middleware/rateLimitMiddleware");
 const {
+  readText,
+  normalizeText,
   validateLoginRequest,
   validateSubmissionRequest,
   validateStatusUpdateRequest,
@@ -21,6 +23,7 @@ const {
   setUserStatus,
   listUsers,
   canSignIn,
+  ACCESS_HELP,
   isAllowedDomain,
   isBootstrapOwner,
   setPassword,
@@ -283,17 +286,11 @@ app.get("/api/health", (request, response) => {
   });
 });
 
-const REGISTRATION_HELP = {
-  not_registered: "No account exists for this address. Register first.",
-  pending_verification: "Check your email and enter the verification code to continue.",
-  pending_approval: "Your account is awaiting approval from a SpeakUp owner.",
-  rejected: "This registration was declined. Contact a SpeakUp owner.",
-  revoked: "Access for this account has been revoked."
-};
+const REGISTRATION_HELP = ACCESS_HELP;
 
 app.post("/api/auth/login", authRateLimiter, validateLoginRequest, async (request, response) => {
   const email = request.validated.email;
-  const password = String(request.body?.password || "");
+  const password = readText(request.body?.password);
 
   if (!password) {
     return response.status(400).json({ error: "Password is required" });
@@ -323,8 +320,8 @@ app.post("/api/auth/login", authRateLimiter, validateLoginRequest, async (reques
 });
 
 app.post("/api/auth/password", requireAdmin, async (request, response, next) => {
-  const current = String(request.body?.currentPassword || "");
-  const next_ = String(request.body?.newPassword || "");
+  const current = readText(request.body?.currentPassword);
+  const next_ = readText(request.body?.newPassword);
 
   const check = validatePassword(next_, request.user.email);
   if (!check.ok) {
@@ -356,9 +353,9 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
     return next(createHttpError(403, `Registration is limited to ${config.adminDomains.map((d) => "@" + d).join(", ")} addresses`));
   }
 
-  const fullName = String(request.body?.fullName || "").trim().slice(0, 120);
-  const reason = String(request.body?.reason || "").trim().slice(0, 500);
-  const password = String(request.body?.password || "");
+  const fullName = normalizeText(request.body?.fullName).slice(0, 120);
+  const reason = normalizeText(request.body?.reason).slice(0, 500);
+  const password = readText(request.body?.password);
 
   const check = validatePassword(password, email);
   if (!check.ok) {
@@ -407,7 +404,7 @@ app.post("/api/auth/register", authRateLimiter, validateLoginRequest, async (req
 });
 
 app.post("/api/auth/verify", authRateLimiter, validateLoginRequest, async (request, response, next) => {
-  const code = String(request.body?.code || "").trim();
+  const code = normalizeText(request.body?.code);
   if (!code) {
     return next(createHttpError(400, "code is required"));
   }
@@ -428,7 +425,7 @@ app.post("/api/auth/verify", authRateLimiter, validateLoginRequest, async (reque
 });
 
 app.get("/api/auth/registration-status", authRateLimiter, async (request, response, next) => {
-  const email = String(request.query.email || "").trim().toLowerCase();
+  const email = normalizeText(request.query.email).toLowerCase();
   if (!email) {
     return next(createHttpError(400, "email is required"));
   }
@@ -460,19 +457,19 @@ app.get("/api/admin/users", requireAdmin, requireOwner, async (request, response
 });
 
 app.post("/api/admin/users/:email/decision", requireAdmin, requireOwner, async (request, response, next) => {
-  const decision = String(request.body?.decision || "").trim().toLowerCase();
+  const decision = normalizeText(request.body?.decision).toLowerCase();
   const allowed = { approve: "approved", reject: "rejected", revoke: "revoked" };
 
   if (!allowed[decision]) {
     return next(createHttpError(400, "decision must be approve, reject, or revoke"));
   }
 
-  const target = String(request.params.email || "").trim().toLowerCase();
+  const target = normalizeText(request.params.email).toLowerCase();
   if (target === request.user.email) {
     return next(createHttpError(400, "You cannot change your own access"));
   }
 
-  const requestedRole = String(request.body?.role || "").trim().toLowerCase();
+  const requestedRole = normalizeText(request.body?.role).toLowerCase();
   const role = Object.keys(ROLE_LABELS).includes(requestedRole) ? requestedRole : undefined;
 
   // A department lead with no departments would see nothing, which reads as a
@@ -602,12 +599,12 @@ app.post("/api/submissions", submissionRateLimiter, validateSubmissionRequest, a
  * accept an id without a matching code.
  */
 async function resolveByAccessCode(request) {
-  const accessCode = String(request.body?.accessCode || request.query.accessCode || "").trim();
+  const accessCode = normalizeText(request.body?.accessCode) || normalizeText(request.query.accessCode);
   if (!accessCode) {
     return { error: createHttpError(400, "accessCode is required") };
   }
 
-  const submission = await getSubmissionById(String(request.params.id || "").trim());
+  const submission = await getSubmissionById(normalizeText(request.params.id));
   if (!submission || !submission.accessCodeHash) {
     // Same response as a wrong code so the endpoint cannot be used to test
     // whether a given submission id exists.
@@ -669,7 +666,7 @@ app.post("/api/track/:id", submissionRateLimiter, async (request, response, next
 });
 
 app.post("/api/track/:id/messages", submissionRateLimiter, async (request, response, next) => {
-  const messageText = String(request.body?.messageText || "").trim();
+  const messageText = normalizeText(request.body?.messageText);
   if (!messageText) {
     return next(createHttpError(400, "messageText is required"));
   }
@@ -705,7 +702,7 @@ app.post("/api/track/:id/messages", submissionRateLimiter, async (request, respo
 });
 
 app.post("/api/track/:id/edit", submissionRateLimiter, async (request, response, next) => {
-  const messageText = String(request.body?.messageText || "").trim();
+  const messageText = normalizeText(request.body?.messageText);
   if (messageText.length < 10) {
     return next(createHttpError(400, "messageText must be at least 10 characters long"));
   }
@@ -878,7 +875,7 @@ app.post("/api/submissions/:id/messages", requireAdmin, validateMessageRequest, 
 app.get("/api/dashboard/submissions", requireAdmin, async (request, response) => {
   // Default to priority order — the whole point of a triage feed is that the
   // most urgent ticket is first, not the most recent.
-  const sort = String(request.query.sort || "priority").toLowerCase();
+  const sort = (normalizeText(request.query.sort) || "priority").toLowerCase();
   const filtered = (await scopedSubmissions(request.user, request.query))
     .sort(sort === "recent"
       ? (left, right) => new Date(right.createdAt) - new Date(left.createdAt)
@@ -1007,8 +1004,8 @@ app.get("/api/appreciations/categories", (request, response) => {
 });
 
 app.post("/api/appreciations", submissionRateLimiter, async (request, response, next) => {
-  const messageText = String(request.body?.messageText || "").trim();
-  const recipientName = String(request.body?.recipientName || "").trim();
+  const messageText = normalizeText(request.body?.messageText);
+  const recipientName = normalizeText(request.body?.recipientName);
 
   if (!recipientName) {
     return next(createHttpError(400, "Who are you appreciating?"));
@@ -1023,7 +1020,7 @@ app.post("/api/appreciations", submissionRateLimiter, async (request, response, 
   const created = await appreciation.createAppreciation({
     recipientName,
     recipientTeam: request.body?.recipientTeam,
-    category: String(request.body?.category || "").trim(),
+    category: normalizeText(request.body?.category),
     messageText,
     fromTeam: request.body?.fromTeam,
     // Optional and decided here. Blank means they preferred not to be named.
@@ -1101,7 +1098,7 @@ app.get("/api/export/brightspots", requireAdmin, async (request, response, next)
   const list = await appreciation.listAppreciations({});
   const digest = appreciation.buildDigest(list, { days: Number(request.query.days) || 7 });
 
-  if (String(request.query.format || "json").toLowerCase() === "html") {
+  if ((normalizeText(request.query.format) || "json").toLowerCase() === "html") {
     response.setHeader("Content-Type", "text/html; charset=utf-8");
     return response.send(appreciation.digestToHtml(digest));
   }
@@ -1129,8 +1126,8 @@ app.post("/api/submissions/:id/escalate", requireAdmin, async (request, response
   }
 
   const withdraw = request.body?.escalate === false;
-  const target = String(request.body?.to || "").trim().toLowerCase();
-  const note = String(request.body?.note || "").trim().slice(0, 1000);
+  const target = normalizeText(request.body?.to).toLowerCase();
+  const note = normalizeText(request.body?.note).slice(0, 1000);
 
   if (!withdraw && !ESCALATION_TARGETS.has(target)) {
     return next(createHttpError(400,
@@ -1376,7 +1373,7 @@ app.post("/api/submissions/:id/assign", requireAdmin, async (request, response, 
   }
 
   const clear = request.body?.assign === false;
-  const to = String(request.body?.to || "").trim().toLowerCase();
+  const to = normalizeText(request.body?.to).toLowerCase();
   if (!clear && !actionPlans.OWNERS.includes(to)) {
     return next(createHttpError(400, `to must be one of: ${actionPlans.OWNERS.join(", ")}`));
   }
@@ -1421,7 +1418,7 @@ app.post("/api/action-plans", requireAdmin, async (request, response, next) => {
     return next(createHttpError(403, "Your role cannot create action plans"));
   }
 
-  const title = String(request.body?.title || "").trim();
+  const title = normalizeText(request.body?.title);
   if (title.length < 5) {
     return next(createHttpError(400, "A title of at least 5 characters is required"));
   }
@@ -1466,7 +1463,7 @@ app.post("/api/action-plans/:id", requireAdmin, async (request, response, next) 
     changes.owner = request.body.owner;
   }
   if (request.body?.dueAt !== undefined) { changes.dueAt = request.body.dueAt || null; }
-  if (request.body?.detail !== undefined) { changes.detail = String(request.body.detail).slice(0, 2000); }
+  if (request.body?.detail !== undefined) { changes.detail = readText(request.body.detail).slice(0, 2000); }
 
   const updated = actionPlans.update(request.params.id, changes);
   if (!updated) { return next(createHttpError(404, "No such action plan")); }
@@ -1492,7 +1489,7 @@ app.post("/api/submissions/:id/merge", requireAdmin, async (request, response, n
     return next(createHttpError(403, "Your role cannot merge cases"));
   }
 
-  const primaryId = String(request.body?.into || "").trim();
+  const primaryId = normalizeText(request.body?.into);
   const child = await getSubmissionById(request.params.id);
   const primary = primaryId ? await getSubmissionById(primaryId) : null;
 
