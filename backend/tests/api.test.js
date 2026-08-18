@@ -184,8 +184,11 @@ test("a password arriving as an array is rejected rather than coerced", async ()
 });
 
 test("a repeated query parameter is rejected, since it parses to an array", async () => {
-  // ?email[]=a&email[]=b is the query-string version of the same hole.
-  const result = await get("/api/auth/registration-status?email[]=a@b.com&email[]=c@d.com");
+  // The query-string version of the same hole. Express 5 parses with node's
+  // querystring, so bracket notation stays a literal key and it is the repeated
+  // plain key that yields ["a@b.com", "c@d.com"] — which String() would have
+  // joined into one plausible-looking address.
+  const result = await get("/api/auth/registration-status?email=a@b.com&email=c@d.com");
 
   assert.equal(result.status, 400);
   assert.match(result.body.error, /email is required/);
