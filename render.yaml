@@ -36,6 +36,17 @@ services:
       - key: SPEAKUP_ADMIN_DOMAINS
         value: gmail.com
 
+      # Both of these exist because the domain above is a public mail provider.
+      # SPEAKUP_AUTO_APPROVE defaults to true, which on a public URL would mean
+      # any gmail address anywhere could register and read every complaint;
+      # false puts registrations in a queue instead. The queue is only useful if
+      # somebody can empty it, and bootstrap owners otherwise fall back to the
+      # placeholder addresses in config.js, so the owner is named explicitly.
+      - key: SPEAKUP_AUTO_APPROVE
+        value: false
+      - key: SPEAKUP_ADMIN_EMAILS
+        value: shashi.shashi727@gmail.com
+
       # The Pages origin. In production an empty value means same-origin only,
       # which would block every request the dashboard makes from github.io.
       - key: SPEAKUP_CORS_ORIGIN
