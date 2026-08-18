@@ -1,175 +1,349 @@
 # Working on SpeakUp
 
-The README explains what this product does and how a report moves through it.
-This file is the other half: the things that are not visible from reading the
-code, and the mistakes that have already been made once here.
+This project is an anonymous employee feedback and leadership intelligence system. The purpose is simple: an employee can submit a concern without creating an account, leadership can review the signal, and the platform can surface patterns before they become a problem.
 
-Read it before touching the backend. Most of it exists because something went
-wrong in a way that looked fine at the time.
+This file exists to preserve the project context that is easy to lose in a codebase: the architecture, the guardrails, the delivery plan, and the prompts used to drive implementation. It is meant to be read before modifying backend behavior or changing product assumptions.
 
 ---
 
-## The one that will bite you
+## Project direction
 
-**Anything that boots the app writes to the real complaint database unless you
-set `SPEAKUP_DB_FILE` first.**
+SpeakUp is not a generic survey tool. It is a trust-focused reporting platform designed for employee concerns, category detection, risk triage, and leadership visibility. The system prioritizes anonymity, readable signal, and operational clarity over user-facing polish alone.
 
-`backend/src/config.js` resolves the database path once, at require time, from
-`SPEAKUP_DB_FILE`, falling back to `backend/data/speakup.db`. There is no other
-variable. Setting `DATA_DIR`, or `NODE_ENV=test`, or anything else you might
-reasonably assume, isolates nothing — the app opens the live file and your
-fixtures land among real reports.
+The product has three core layers:
 
-This has happened. Two smoke-test submissions ended up in the production
-database and had to be picked out by id afterwards.
+1. Public intake for anonymous reporting
+2. Backend processing for validation, persistence, classification, and access control
+3. Leadership dashboard for review, action planning, and pattern detection
 
-So in any test, script, or throwaway file that requires `app.js`:
+The design is intentionally lightweight. The product is built to work with minimal operational overhead while keeping the core principles intact: privacy, traceable decisions, and defensible reporting.
+
+---
+
+## Architecture overview
+
+### 1. Public submission surface
+
+The public side is intentionally low-friction. Employees can submit a complaint or concern with no login, no account setup, and no identifying details. This keeps the barrier to reporting low while preserving the trust model of the system.
+
+Responsibilities:
+- render the anonymous submission page
+- validate required input fields
+- generate the ticket reference and access code
+- send the submission to the backend API
+- keep the experience simple and confidence-building
+
+### 2. Backend API layer
+
+The backend is the system of record. It owns validation, storage, access control, routing, auditability, and admin workflows. This is where trust is enforced.
+
+Responsibilities:
+- accept complaint submissions
+- validate content using project-specific rules
+- persist the report and metadata
+- classify the report by category, sentiment, and priority
+- restrict access by role and scope
+- provide admin and leadership endpoints
+
+### 3. Analytics and classification engine
+
+This is the intelligence layer. It does not depend on a heavy AI stack or external model call. Instead, it uses rule-based classification, phrase extraction, and pattern detection to produce explainable insight.
+
+Responsibilities:
+- categorize reports into issue types
+- score priority and sentiment
+- detect important phrases and repeated themes
+- build pattern summaries such as repeated issues or rising trends
+- generate action-oriented summaries without rewriting the original content
+
+### 4. Leadership dashboard
+
+The dashboard is designed around decisions, not just counts. Leadership should see what is urgent now, what patterns are emerging, and what action is required.
+
+Responsibilities:
+- show metrics and trends
+- highlight urgent and repeated issues
+- display patterns and priorities with evidence
+- allow review and response tracking
+- keep sensitive data appropriately scoped by role
+
+### 5. Admin and access control
+
+Admin features are intentionally protected and scoped. The product distinguishes between anonymous reporting and internal review access. Leadership access is role-based and must be enforced server-side.
+
+Responsibilities:
+- validate users and roles
+- allowlist access by domain or configured admin identities
+- restrict data visibility by department and sensitivity
+- protect sensitive categories from inappropriate exposure
+- maintain operational security without compromising anonymity
+
+---
+
+## How the report moves through the system
+
+1. An employee opens the public submission flow.
+2. They write a report and receive an access code and ticket ID.
+3. The submission is sent to the backend API.
+4. The backend validates, stores, and classifies the content.
+5. The analytics layer extracts key phrases, adds priority, and flags patterns.
+6. Leadership sees the relevant metrics and reports through the dashboard.
+7. Action plans and follow-up can be tracked without identifying the reporter.
+
+This is the operational loop that matters: report -> classification -> visibility -> action -> follow-up.
+
+---
+
+## Critical project guardrails
+
+These are the rules that matter most and are easy to break.
+
+### Database safety
+
+Anything that boots the app may write to the live complaint database unless the environment variable is set first.
+
+The app resolves its database path once at require time using `SPEAKUP_DB_FILE`. If it is not set, it falls back to the live path. This is a real risk, not a theoretical one.
+
+Use this pattern in tests and temporary scripts before requiring the app:
 
 ```js
-process.env.SPEAKUP_DB_FILE = path.join(sandbox, "test.db");   // BEFORE the require
+process.env.SPEAKUP_DB_FILE = path.join(sandbox, "test.db");
 const app = require("../src/app");
 ```
 
-`backend/tests/api.test.js` does this at the top of the file and says why. Copy
-that pattern. If you are about to run something that touches the database and
-you have not set that variable, you are about to write to production.
+This pattern is already used in the backend tests for a reason. Do not assume `NODE_ENV=test`, `DATA_DIR`, or any other variable isolates the database. They do not.
 
-On Windows the sandbox will not delete while the app holds the handle — call
-`db.close()` before `fs.rmSync`, and wrap the removal in a try/catch, which is
-what the test teardown does.
+On Windows, cleanup must also account for open file handles. Close the database before deleting the sandbox file, and wrap the removal in a try/catch.
+
+### Error handling
+
+Errors must go through `next(createHttpError(...))` rather than being sent directly. The project enforces a controlled error shape with `{ error }` and optional `{ details }`, and it exposes messages only when the error is explicitly marked as safe.
+
+This matters because internal driver, parser, or mail errors may contain file paths, credentials, or connection strings. Those must never leak to the client.
+
+### Text handling
+
+Request text should be read through the project helpers such as `readText` and `normalizeText`. Do not coerce user input with plain `String(...)` calls on arrays or mixed value types. That can silently transform malformed input into valid-looking text and bypass validation.
+
+Password handling is especially sensitive. Trimming a password changes the value and is not acceptable.
+
+### Role semantics and session safety
+
+`details.reason` on auth failures is not decoration. The frontend uses it to determine whether the session is expired. The same field must not be used for policy refusals such as “your role cannot export.” That would make a legitimate role check look like an expired session.
+
+### Express-specific gotchas
+
+This project uses Express 5, not Express 4.
+
+- async route errors are forwarded automatically
+- query parsing is the `simple` parser, not `qs`
+- `app.router` is the router; `app._router` is not the right object
+
+These are not optional details. They affect behavior and debugging.
+
+### Repository rules
+
+- Files are CRLF, so scripts that match multi-line strings must respect that
+- `dist/`, `node_modules/`, `backend/data/`, `.env`, and `CREDENTIALS.md` are ignored
+- `backend/data/` must never be committed because it contains complaint text and password hashes
 
 ---
 
-## Running it
+## Running the project
 
 ```bash
 npm install
-npm start          # http://127.0.0.1:3000, serves API and pages together
-npm run dev        # same, restarts on change
-npm test           # all 77 tests
+npm start
+npm run dev
+npm test
 ```
 
-`npm test` lists its three files explicitly rather than passing the directory.
-That is deliberate: `node --test backend/tests/` fails on this Node build,
-trying to resolve the directory as a module. If you add a test file, add it to
-the script.
+Use the explicit test file list in the package script instead of passing a directory to Node's test runner. This project has separate suites for API, UI, and client behavior, and they are intentionally different.
 
-The three suites are different animals. `ui.test.js` loads each page in jsdom
-with a stubbed API and asserts what a user actually ends up looking at — it
-exists because a bug shipped three times where the API was correct, the HTML
-was correct, and the screen was wrong. `api.test.js` boots the real server and
-checks the HTTP contract. `client.test.js` runs `assets/api.js` in a VM against
-a fake fetch.
+The three suites cover different responsibilities:
 
-There is no linter and no formatter — match the surrounding file. Node 24, no
-build step for the backend, no framework beyond Express. `npm run build` is a
-PowerShell script that assembles `dist/` for static hosting; it is not part of
-running or testing the API.
+- `api.test.js` boots the server and validates the HTTP contract
+- `ui.test.js` renders pages in jsdom and verifies what the user actually sees
+- `client.test.js` runs the frontend client logic against a fake fetch layer
+
+There is no linter or formatter enforced by the repo, so match the surrounding code style. This is a backend-first project with no framework beyond Express and no build step for the Node API itself.
 
 ---
 
-## Express 5, not 4
+## Project workstreams
 
-Worth knowing because the differences are quiet:
+### Workstream 1: anonymous submission flow
 
-- **Async errors forward automatically.** An `async` route handler that rejects
-  reaches the error middleware on its own. No wrapper needed.
-- **The query parser is `simple`, not `qs`.** `?tags[]=a&tags[]=b` gives you a
-  literal `"tags[]"` key, and `request.query.tags` is undefined. A *repeated*
-  plain key — `?tags=a&tags=b` — is what produces an array. A test was written
-  against the wrong one of these and passed for the wrong reason.
-- `app.router` is the router; `app._router` is gone.
+This is the front door of the product.
+
+Scope:
+- create the anonymous form
+- validate input and protect against bad payloads
+- generate the ticket ID and access code
+- store the report in a safe and minimal structure
+- allow reporter follow-up without exposing identity
+
+Quality bar:
+- no account is required
+- submissions are stored without identifying metadata
+- the reporter can return and track the ticket securely
+
+### Workstream 2: backend and API contract
+
+This is the system foundation.
+
+Scope:
+- route design and HTTP contract
+- validation middleware
+- auth and session checks
+- role-based access rules
+- audit and service orchestration
+
+Quality bar:
+- requests are validated consistently
+- auth failures are correctly shaped
+- role restrictions do not leak sensitive existence information
+- the API contract remains stable across upgrades
+
+### Workstream 3: classification and intelligence
+
+This is the product differentiator.
+
+Scope:
+- category detection
+- priority scoring
+- sentiment handling
+- key phrase extraction
+- summarization without generative rewriting
+- repeated issue and trend detection
+
+Quality bar:
+- outputs are explainable
+- priority reasons are explicit and reviewable
+- rules are transparent and not hidden behind vague labels
+
+### Workstream 4: dashboard and leadership visibility
+
+This is the decision layer for leadership.
+
+Scope:
+- metrics overviews
+- trends and aggregation
+- category distribution and issue detail
+- pattern summarization and action visibility
+- department-aware and role-aware presentation
+
+Quality bar:
+- leadership sees actionable insight, not raw noise
+- sensitive reporting remains correctly filtered
+- every pattern is explainable and defensible
+
+### Workstream 5: admin and user management
+
+This is the trust and governance layer.
+
+Scope:
+- owner and reviewer access flows
+- role assignment
+- department scoping
+- secure user registration and verification
+- admin actions and review behaviors
+
+Quality bar:
+- only authorized people can access internal tools
+- access is constrained and auditable
+- the product does not create privacy or trust regressions
+
+### Workstream 6: deployment and operations
+
+This is the environment layer.
+
+Scope:
+- static frontend hosting on GitHub Pages
+- API hosting on Render or similar Node platform
+- environment variables and CORS configuration
+- host binding and secure startup settings
+- database persistence planning and operational risk management
+
+Quality bar:
+- the app works in a deployed environment
+- frontend and backend talk to the right origin
+- the app does not silently fail in production because of host or CORS assumptions
 
 ---
 
-## Conventions that are load-bearing
+## Delivery plan
 
-**Errors go through `next(createHttpError(...))`.** Never write an error
-response directly. The handler in `errorMiddleware.js` sends `{ error }` plus
-optional `{ details }`, and it only reveals a message when the error carries
-`expose: true`, which `createHttpError` sets. Anything else that reaches it —
-a driver error, a parser, a mail client — is logged and answered with a flat
-"Internal server error", because those messages carry connection strings and
-file paths. If you throw a 5xx you want the user to read, build it with
-`createHttpError`.
+### Phase 1: MVP foundation
+- define the product schema and intake flow
+- implement anonymous submission and storage
+- wire the backend API and basic validation
+- create the admin and role model
+- establish the dashboard baseline
 
-`details.reason` on a 401 or 403 is not decoration. `assets/api.js` uses its
-presence to decide whether the session is dead. Auth failures carry it; role
-refusals ("your role cannot export") must not, or the admin gets signed out and
-told their session expired when it did not.
+### Phase 2: intelligence layer
+- add category and sentiment rules
+- implement priority scoring and phrase extraction
+- build repeated issue and trend detection
+- surface pattern explanations to leadership
 
-**Read request text with `readText` / `normalizeText`,** from
-`validationMiddleware.js`. Never `String(request.body?.x || "")`. `String()` on
-an array gives you `"aaaaa,bbbbb"`, which sails through a minimum-length check
-and gets stored as somebody's complaint. Those helpers return `""` for anything
-that is not a string, which every caller already treats as missing. Passwords
-use `readText` specifically — `normalizeText` trims, and trimming a password
-silently changes it.
-
-**Comments explain the failure mode, not the mechanism.** The code says what it
-does; the comment says what goes wrong without it. Look at `tokenService.js` or
-the rate limiter for the register. A comment that restates the line below it is
-worse than none.
-
-**Commit messages are prose.** A subject line, then paragraphs explaining what
-was wrong and why the fix is shaped the way it is. Not bullet lists.
+### Phase 3: operational maturity
+- harden access logic and data scoping
+- improve admin workflows and audit quality
+- validate deployment assumptions and persistence strategy
+- review compliance, privacy, and reliability risks
 
 ---
 
-## Deployment: two halves
+## Product and planning prompts
 
-The pages are static on **GitHub Pages**; the API runs on **Render**. They are
-on different origins, which is the source of most deployment surprises.
+These prompts are useful as starting points for planning, architecture work, or implementation. They keep the work focused on the actual product goals rather than drifting into generic backend or UI tasks.
 
-- `assets/api.js` calls the Render URL when it sees it is running on
-  `github.io`, and stays same-origin otherwise so a local `npm start` works
-  unchanged. `window.SPEAKUP_API_BASE` overrides both.
-- `SPEAKUP_CORS_ORIGIN` on Render must be the Pages origin or the browser
-  refuses every request.
-- `SPEAKUP_HOST=0.0.0.0` is required. The default is `127.0.0.1`, and on Render
-  that means the deploy succeeds, the logs look healthy, and nothing can reach
-  it.
-- **Auto-deploy does not fire.** The service was created through the API and has
-  no GitHub webhook, so pushing does nothing until a deploy is triggered
-  manually. Connect the repo in Render's dashboard if you want this fixed.
-- `demo-mode.js` substitutes sample data when no backend exists, which is what
-  the Pages link used to be. It asks `api.js` where the client actually talks
-  before deciding. It must never stand in for a live deployment — an error is
-  honest, invented complaints are not.
+### Prompt 1: product planning
 
-**The free tier has no persistent disk.** Every deploy wipes the database:
-reports, accounts, audit log, all of it. This is unresolved. Fixing it means
-moving the data off the container — Turso keeps the SQL dialect and needs the
-driver made async, Litestream needs no code change at all — and either way it
-needs an account that does not exist yet.
+> We are working on SpeakUp, an anonymous employee feedback and leadership intelligence product. Build a refined product plan that covers the anonymous submission flow, backend processing, role-based leadership access, risk and pattern detection, and the governance concerns around privacy and trust. Keep the plan practical, product-oriented, and focused on the MVP first.
 
----
+### Prompt 2: architecture review
 
-## Things that look wrong and are not
+> Review the SpeakUp architecture and propose a clean technical structure for frontend, backend, analytics, and dashboard responsibilities. Include data flow, access boundaries, privacy implications, and the constraints that matter for a low-friction anonymous reporting system. Keep the design simple, explainable, and operationally realistic.
 
-- **The audit trail is a file, not a table.** A trail the app can rewrite is not
-  a trail. See `auditService.js`.
-- **Linked reports are never merged.** Each reporter keeps their own thread and
-  access code. Combining them would put several people into one conversation
-  where any of them could read the others.
-- **No column identifies a reporter.** The access code exists only as a SHA-256
-  hash. That is what makes a report unlinkable to a person even with the
-  database in hand. Do not add a "just for support" identifier.
-- **The frontend is served from an explicit allowlist,** not
-  `express.static(root)`. The project root holds `.env`, `node_modules` and the
-  complaint database.
-- **`buildApiInventory()` walks the router.** Endpoint lists maintained by hand
-  drift; this one had fallen a route behind before anyone noticed. Add the
-  description to `ROUTE_PURPOSE` — a test fails if a route has none.
+### Prompt 3: backend implementation
+
+> Implement the backend logic for anonymous complaint submission, validation, role-scoped access, and classification output. Preserve the project’s conventions around secure error handling, request text normalization, and server-side authorization. Keep the solution aligned with the existing Node/Express architecture.
+
+### Prompt 4: dashboard refinement
+
+> Design the leadership dashboard for SpeakUp with a focus on urgency, patterns, high-signal findings, and explainable reporting. The dashboard should help leadership understand what is urgent today, what issues are recurring, and which departments or categories deserve attention without exposing sensitive details beyond the appropriate role.
+
+### Prompt 5: deployment readiness
+
+> Prepare the project for realistic deployment on a static frontend plus a hosted Node backend. Focus on CORS, host binding, environment variables, and the difference between local development and a live production origin. Ensure the deployment plan reflects the actual constraints of GitHub Pages and a backend service.
+
+### Prompt 6: bug fix and investigation
+
+> Investigate and fix the bug in SpeakUp with a focus on root cause, minimal scope, and validation. Start from the actual behavior, identify the failure point, and ensure that the fix respects project guardrails around privacy, auth, and the existing backend conventions.
 
 ---
 
-## Repo housekeeping
+## Implementation priorities
 
-Files are CRLF. Scripts that rewrite source by matching multi-line strings need
-to account for it, or they will silently find nothing and report success.
+If the team is working in chunks, this is the recommended order:
 
-`dist/`, `node_modules/`, `backend/data/`, `.env` and `CREDENTIALS.md` are
-ignored, and the repository is public. Nothing from `backend/data/` may ever be
-committed: it holds complaint text and password hashes, and git history keeps
-what you delete.
+1. anonymous submission and ticket flow
+2. backend validation and persistence
+3. auth, role guards, and access scoping
+4. classification and issue intelligence
+5. dashboard metrics and action visibility
+6. deployment hardening and operational safety
+
+This order reduces risk because the platform’s trust model and privacy assumptions are established before the intelligence layer is expanded.
+
+---
+
+## Final working notes
+
+The project works because it is deliberately narrow and trustworthy: anonymous employees can report without friction, leadership can act with clarity, and the product remains explainable rather than opaque.
+
+The biggest risk is not feature absence; it is accidental drift in trust boundaries. Preserve the anonymity model, enforce access at the backend, keep decision-making explainable, and never confuse a demo with a real deployment.
+
+If a change is about data handling, auth, classification, or reporting behavior, it should be reviewed through the lens of privacy and operational correctness first, then through the lens of UI polish.
