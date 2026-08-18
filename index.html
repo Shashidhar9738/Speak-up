@@ -2930,15 +2930,27 @@ document.getElementById('pwdForm').addEventListener('submit', async function (ev
 });
 
 // Opens in a tab so the browser's own Save-as-PDF can file it; a bundled PDF
-// renderer would be a large dependency for one report.
-document.getElementById('briefingBtn').addEventListener('click', function (event) {
+// renderer would be a large dependency for one report. Fetched through the
+// client rather than opened directly, so it carries the admin token and goes to
+// the API origin instead of whichever host served this page.
+document.getElementById('briefingBtn').addEventListener('click', async function (event) {
   event.preventDefault();
   if (window.SPEAKUP_DEMO) {
     alert('The briefing needs the backend, which the demo does not have.');
     return;
   }
-  var query = SpeakUpApi.toQueryString(state.filters);
-  window.open('api/dashboard/export.pdf' + query, '_blank');
+  var button = this;
+  button.disabled = true;
+  try {
+    var blob = await SpeakUpApi.dashboard.briefing(state.filters);
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  } catch (error) {
+    alert(error.message || 'Could not generate the briefing.');
+  } finally {
+    button.disabled = false;
+  }
 });
 
 document.getElementById('exportBtn').addEventListener('click', async function (event) {

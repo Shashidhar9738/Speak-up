@@ -123,3 +123,85 @@ test("a server error leaves the session alone", async () => {
   assert.equal(error.message, "Internal server error");
   assert.equal(client.stillSignedIn(), true);
 });
+
+/**
+ * Load the client on a given hostname and record what it asks fetch for.
+ *
+ * The briefing used to be opened with a bare window.open('api/dashboard/
+ * export.pdf'), which on GitHub Pages resolved against the static site and
+ * returned its 404 page, and which could not have sent the admin's token even
+ * from the right origin.
+ */
+function withHost({ hostname, status, body }) {
+  const calls = [];
+  const storage = { "speakup.admin.token": "a-valid-looking-token" };
+  const win = {
+    localStorage: {
+      getItem: (key) => (key in storage ? storage[key] : null),
+      setItem: (key, value) => { storage[key] = value; },
+      removeItem: (key) => { delete storage[key]; }
+    },
+    location: { href: "index.html", hostname },
+    Blob: function (parts, options) {
+      this.parts = parts;
+      this.type = (options || {}).type;
+    },
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        status,
+        ok: status >= 200 && status < 300,
+        text: async () => body
+      };
+    }
+  };
+  win.window = win;
+
+  const context = vm.createContext(win);
+  context.fetch = win.fetch;
+  context.Blob = win.Blob;
+  vm.runInContext(SOURCE, context);
+
+  return { api: win.SpeakUpApi, calls };
+}
+
+test("the briefing is requested from the API origin, not the static host", async () => {
+  const client = withHost({
+    hostname: "shashidhar9738.github.io",
+    status: 200,
+    body: "<html>briefing</html>"
+  });
+
+  const blob = await client.api.dashboard.briefing({ days: 30 });
+
+  assert.equal(client.calls.length, 1);
+  assert.equal(
+    client.calls[0].url,
+    "https://speakup-api-c4c8.onrender.com/api/dashboard/export.pdf?days=30",
+    "the briefing was asked of the page's own origin, where there is no API"
+  );
+  assert.equal(client.calls[0].options.headers.Authorization, "Bearer a-valid-looking-token",
+    "the briefing went out without the admin's token and would answer 401");
+  assert.equal(blob.type, "text/html");
+});
+
+test("the briefing stays same-origin when the pages are served by the API itself", async () => {
+  const client = withHost({ hostname: "localhost", status: 200, body: "<html>briefing</html>" });
+
+  await client.api.dashboard.briefing();
+
+  assert.equal(client.calls[0].url, "/api/dashboard/export.pdf");
+});
+
+test("a role that cannot export is told so, not given a status code", async () => {
+  const client = withHost({
+    hostname: "localhost",
+    status: 403,
+    body: JSON.stringify({ error: "Your role cannot export" })
+  });
+
+  const error = await client.api.dashboard.briefing().then(() => null, (caught) => caught);
+
+  assert.equal(error.message, "Your role cannot export");
+  assert.equal(error.status, 403);
+});

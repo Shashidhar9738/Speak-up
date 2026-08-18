@@ -440,6 +440,33 @@
           throw ApiError("Export failed (" + response.status + ")", response.status);
         }
         return response.blob();
+      },
+      // The briefing has the same two constraints as the CSV and cannot be a
+      // plain window.open either: the endpoint is admin-only, and a window.open
+      // sends no Authorization header, so it answers 401. A relative URL also
+      // asks whichever host served the page — on GitHub Pages that is the static
+      // site, which has no API and returns its own 404 page. Fetching it against
+      // baseUrl() fixes both; the caller opens the blob.
+      //
+      // Served as HTML despite the .pdf name: the browser's own Save-as-PDF
+      // does the printing, so what comes back is a document, not a PDF.
+      briefing: async function (query) {
+        var response = await fetch(baseUrl() + "/api/dashboard/export.pdf" + toQueryString(query), {
+          headers: { Authorization: "Bearer " + getToken() }
+        });
+        var text = await response.text();
+        if (!response.ok) {
+          // Role refusals ("Your role cannot export") are worth repeating to the
+          // admin verbatim; a bare status code reads like a broken button.
+          var message = "";
+          try {
+            message = (JSON.parse(text) || {}).error || "";
+          } catch (parseError) {
+            message = "";
+          }
+          throw ApiError(message || ("Briefing failed (" + response.status + ")"), response.status);
+        }
+        return new Blob([text], { type: "text/html" });
       }
     }
   };

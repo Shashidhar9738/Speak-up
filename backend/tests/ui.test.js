@@ -66,7 +66,8 @@ async function loadPage(page, options = {}) {
       categories: async () => ({ categories: [] }),
       trends: async () => ({ trends: [] }),
       heatmap: async () => ({ heatmap: {} }),
-      exportCsv: async () => new window.Blob([""])
+      exportCsv: async () => new window.Blob([""]),
+      briefing: async () => new window.Blob([""], { type: "text/html" })
     },
     actionPlans: {
       list: async () => ({ summary: { open: 0, overdue: 0, done: 0, working: 0 }, owners: ["hr", "legal"], plans: [] }),
