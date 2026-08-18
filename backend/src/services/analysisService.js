@@ -6,7 +6,11 @@ const { classifyPriority } = require("./priorityService");
 // substring includes() on whole words, which silently missed every inflection:
 // "pressuring" does not contain "pressure".
 const CATEGORY_RULES = [
-  { name: "Harassment & Ethics", terms: ["harass", "bias", "discrimin", "abus", "threat", "retaliat", "ethic", "misconduct", "bully", "hostil", "inappropri", "assault", "racis", "sexis"] },
+  { name: "Harassment & Ethics", terms: ["harass", "bias", "discrimin", "abus", "threat", "retaliat", "ethic", "misconduct", "bully", "hostil", "inappropri", "assault", "racis", "sexis",
+    // Protected characteristics: a remark about someone's age or disability is
+    // discrimination however casually it is phrased.
+    "disabilit", "disabled", "my age", "too old", "too young", "pregnan", "maternity",
+    "religio", "caste", "ethnic", "accent", "humiliat", "belittl", "mock"] },
   // "pay" and "compensat" are avoided: bare "pay" swallowed "overtime pay" and
   // "compensat" swallowed "compensatory time off", pulling workload complaints
   // into the payroll bucket. The narrower stems below still catch real cases.
@@ -20,8 +24,16 @@ const CATEGORY_RULES = [
   { name: "Facilities & IT", terms: ["laptop", "system", "office", "access", "network", "wifi", "tool", "hardware", "software", "cafeteria", "parking", "washroom", "hvac", "aircon", "building", "conditioning", "temperatur", "facilit", "restroom", "elevator", "canteen", "seating", "desk", "pantry", "hygien", "ventilat"] }
 ];
 
-const POSITIVE_TERMS = ["good", "great", "excellent", "support", "help", "resolv", "smooth", "appreciat", "thank", "happ", "improv", "flexib", "transparen", "respect", "fair", "recogni"];
-const NEGATIVE_TERMS = ["bad", "delay", "burnout", "harass", "issue", "urgent", "risk", "toxic", "threat", "pressur", "pending", "unfair", "ignor", "worse", "worst", "frustrat", "poor", "fail", "refus", "deni", "stress", "anxi", "unrealist", "arbitrar", "disparit", "stagnat", "attrit", "resign", "morale", "conflict", "crash", "broken", "unbearab", "inaction", "favorit", "favourit", "forced", "unpaid", "overwork", "understaff", "micromanag", "discrimin", "retaliat", "bully", "hostil", "inappropri", "complain", "concern", "disappoint", "neglect", "overlook", "exclud", "unaddress", "unresolv"];
+// Stems here must not appear in ordinary complaint prose. "happ" was here for
+// "happy" and matched "happening" — a word in almost every complaint — so
+// negative reports were being scored positive. Spell such words out instead.
+const POSITIVE_TERMS = ["good", "great", "excellent", "support", "resolv", "smooth", "appreciat", "improv", "flexib", "transparen", "respect", "recogni", "helpful", "happy", "happier", "pleased", "grateful", "wonderful", "brilliant", "kind"];
+const NEGATIVE_TERMS = ["bad", "delay", "burnout", "harass", "issue", "urgent", "risk", "toxic", "threat", "pressur", "pending", "unfair", "ignor", "worse", "worst", "frustrat", "poor", "fail", "refus", "deni", "stress", "anxi", "unrealist", "arbitrar", "disparit", "stagnat", "attrit", "resign", "morale", "conflict", "crash", "broken", "unbearab", "inaction", "favorit", "favourit", "forced", "unpaid", "overwork", "understaff", "micromanag", "discrimin", "retaliat", "bully", "hostil", "inappropri", "complain", "concern", "disappoint", "neglect", "overlook", "exclud", "unaddress", "unresolv",
+  // How mistreatment is actually described. Their absence let a polite sign-off
+  // outweigh the substance of a report.
+  "humiliat", "belittl", "demean", "shout", "yell", "scream", "mock", "ridicul",
+  "insult", "intimidat", "afraid", "scared", "uncomfortable", "distress", "upset",
+  "singled out", "picked on", "no respect", "disrespect", "unbearable", "hostile"];
 const URGENT_TERMS = ["urgent", "retaliat", "harass", "fraud", "abus", "threat", "burnout", "securit", "immediate", "emergenc", "unsafe", "illegal", "assault"];
 const SPAM_TERMS = ["buy now", "free money", "crypto", "casino", "click here", "limited offer", "viagra", "lottery", "make money", "work from home opportunity"];
 

@@ -24,8 +24,10 @@ const PRIORITY_TIERS = [
       "sexual", "racis", "casteis", "molest", "violence", "suicid", "self harm",
       "whistleblow", "cover up", "coverup", "falsif", "forged",
       // Identity-based remarks are harassment however politely they are phrased.
-      "accent", "religio", "caste", "gender", "ethnic", "disabilit", "pregnan",
-      "slur", "derogat", "humiliat", "intimidat", "hostile"
+      "accent", "religio", "caste", "gender", "ethnic", "disabilit", "disabled",
+      "pregnan", "maternity", "my age", "too old", "too young",
+      "slur", "derogat", "humiliat", "intimidat", "hostile", "belittl", "demean",
+      "shout", "yell", "scream", "mock", "singled out", "picked on"
     ]
   },
   {
