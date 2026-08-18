@@ -443,4 +443,4 @@ tells a curious admin who else has been reading which complaints.
 node backend/scripts/migrate-json-to-sqlite.js   # one-off, safe to re-run
 ```
 
-Full API inventory: `GET /api/todo/apis`, or see `API_TODO.md`.
+Full API inventory: `GET /api/todo/apis`.

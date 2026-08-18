@@ -27,7 +27,7 @@ if (Test-Path $assetsSource) {
 }
 
 # Reference documents.
-$docs = @('SPEAKU_2.MD', 'SPEAKU_2_AGENT.md', 'SPEAKU_2_ARCHITECTURE.md', 'SPEAKU_2_PLANNING.md', 'API_TODO.md')
+$docs = @('SPEAKU_2.MD', 'SPEAKU_2_AGENT.md', 'SPEAKU_2_ARCHITECTURE.md', 'SPEAKU_2_PLANNING.md')
 foreach ($doc in $docs) {
     $source = Join-Path $projectRoot $doc
     if (Test-Path $source) {
