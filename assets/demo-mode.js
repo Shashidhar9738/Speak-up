@@ -282,11 +282,29 @@
 
   /**
    * Probe for a real backend. Demo data must never mask a live deployment, so
-   * this only installs when /api/health is genuinely unreachable.
+   * this only installs when the API is genuinely unreachable.
+   *
+   * The probe used to be the relative "api/health", which assumed the API
+   * shares this page's origin. Once the pages moved to GitHub Pages and the API
+   * to Render that stopped being true: the relative path resolved to
+   * github.io/Speak-up/api/health, 404ed, and demo data replaced a perfectly
+   * live deployment — the one thing this file exists not to do.
+   *
+   * So: ask api.js where it actually talks. When it names a hosted API, that is
+   * a real deployment and sample data must never stand in for it, not even
+   * while the service is asleep or briefly down — an error is honest, fiction
+   * is not. The unreachable case that demo mode is for is Pages with no backend
+   * at all, which is exactly when no hosted API is configured.
    */
-  var probe = fetch("api/health", { method: "GET" })
-    .then(function (r) { return r.ok; })
-    .catch(function () { return false; });
+  var hostedApi = (global.SpeakUpApi && typeof global.SpeakUpApi.baseUrl === "function")
+    ? global.SpeakUpApi.baseUrl()
+    : "";
+
+  var probe = hostedApi
+    ? Promise.resolve(true)
+    : fetch("api/health", { method: "GET" })
+        .then(function (r) { return r.ok; })
+        .catch(function () { return false; });
 
   global.SPEAKUP_DEMO_READY = probe.then(function (live) {
     if (!live) { install(); }

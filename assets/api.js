@@ -206,6 +206,9 @@
 
   var api = {
     TOKEN_KEY: TOKEN_KEY,
+    // Exposed so demo-mode.js can probe wherever the client actually talks
+    // rather than assuming the API shares this page's origin.
+    baseUrl: baseUrl,
     getToken: getToken,
     getEmail: getEmail,
     setSession: setSession,
