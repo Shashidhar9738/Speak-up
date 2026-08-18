@@ -65,6 +65,61 @@
     }
   }
 
+  /**
+   * Tell the visitor when the API is waking rather than leaving them at a page
+   * that looks broken.
+   *
+   * Render stops the free service after about 15 minutes idle and takes close
+   * to a minute to start it again. The workflow in .github/workflows keeps that
+   * from happening most of the time; this covers the times it does — the first
+   * request after a deploy, or a missed schedule.
+   *
+   * Only runs when the API is on another origin, which is the deployment this
+   * applies to, and only where there is a document to attach to: this file is
+   * also loaded headless by the tests.
+   */
+  var wakeNotice = null;
+  var wakeTimer = null;
+  var pending = 0;
+
+  function canShowNotice() {
+    return Boolean(baseUrl() && global.document && global.document.body && global.setTimeout);
+  }
+
+  function showWakeNotice() {
+    if (wakeNotice || !global.document.body) { return; }
+    wakeNotice = global.document.createElement("div");
+    wakeNotice.textContent = "Waking the server — this can take up to a minute.";
+    wakeNotice.setAttribute("role", "status");
+    wakeNotice.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);" +
+      "z-index:9999;background:#1f2937;color:#fff;padding:10px 16px;border-radius:8px;" +
+      "font:14px/1.4 system-ui,-apple-system,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25)";
+    global.document.body.appendChild(wakeNotice);
+  }
+
+  function beginRequest() {
+    if (!canShowNotice()) { return; }
+    pending += 1;
+    if (wakeTimer === null) {
+      // Long enough that a healthy request never flashes a message at anyone.
+      wakeTimer = global.setTimeout(showWakeNotice, 2500);
+    }
+  }
+
+  function endRequest() {
+    if (pending === 0) { return; }
+    pending -= 1;
+    if (pending > 0) { return; }
+    if (wakeTimer !== null) {
+      global.clearTimeout(wakeTimer);
+      wakeTimer = null;
+    }
+    if (wakeNotice && wakeNotice.parentNode) {
+      wakeNotice.parentNode.removeChild(wakeNotice);
+    }
+    wakeNotice = null;
+  }
+
   function ApiError(message, status) {
     var error = new Error(message);
     error.name = "ApiError";
@@ -99,6 +154,7 @@
     }
 
     var response;
+    beginRequest();
     try {
       response = await fetch(baseUrl() + path, {
         method: settings.method || "GET",
@@ -107,6 +163,8 @@
       });
     } catch (networkError) {
       throw ApiError("Cannot reach the SpeakUp API. Is the server running?", 0);
+    } finally {
+      endRequest();
     }
 
     if (response.status === 204) {

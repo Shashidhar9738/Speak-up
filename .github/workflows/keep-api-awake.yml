@@ -1,0 +1,39 @@
+name: Keep the API awake
+
+# Render stops a free service after roughly 15 minutes without traffic, and the
+# next visitor waits close to a minute while it starts again. On a reporting
+# tool that is worse than slow: someone with something difficult to say meets a
+# page that looks broken, and does not come back.
+#
+# A request every ten minutes keeps the service running. Roughly 730 hours a
+# month fits inside Render's 750 free instance-hours, so this stays free, and
+# scheduled workflows cost nothing on a public repository.
+#
+# Two things to know when it stops working: GitHub disables scheduled workflows
+# in a repository with no activity for 60 days, and the schedule is best-effort
+# under load, so ten minutes is a floor rather than a guarantee.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the health endpoint
+        run: |
+          # A cold start can take most of a minute, so allow a generous timeout
+          # and retry: a single slow response is the service waking, not a fault.
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+              https://speakup-api-c4c8.onrender.com/api/health) || code=000
+            echo "attempt $attempt -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "The API did not answer after three attempts."
+          exit 1
