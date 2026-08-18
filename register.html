@@ -79,6 +79,12 @@ button:disabled { opacity:.55; cursor:not-allowed; }
   background: none; border: 0; cursor: pointer; padding: 6px 8px;
   color: #9ca3af; font-size: 17px; line-height: 1; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
+  /* The bare `button` rule above sets width:100% and a top margin for the
+     page's full-width submit buttons. This one is an icon inside a field, and
+     inherited both: a 380px box that centred the icon in the middle of the
+     input, pushed down onto the hint text below it. Absolute positioning sizes
+     to the content once width is not forced. */
+  width: auto; margin: 0;
 }
 .pwd-toggle:hover { color: #4f46e5; background: rgba(79,70,229,.08); }
 .pwd-toggle:focus-visible { outline: 2px solid #4f46e5; outline-offset: 1px; }

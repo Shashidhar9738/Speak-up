@@ -636,6 +636,10 @@ body {
   background: none; border: 0; cursor: pointer; padding: 6px 8px;
   color: #9ca3af; font-size: 17px; line-height: 1; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
+  /* The page's own button styling is full width with a top margin, which this
+     icon-inside-a-field inherited: it became a full-width box that centred the
+     icon in the middle of the input and pushed it below the field. */
+  width: auto; margin: 0;
 }
 .pwd-toggle:hover { color: #4f46e5; background: rgba(79,70,229,.08); }
 .pwd-toggle:focus-visible { outline: 2px solid #4f46e5; outline-offset: 1px; }
