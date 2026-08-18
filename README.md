@@ -409,6 +409,7 @@ substitute for a real certificate in front of real reporters.
 | `SPEAKUP_ADMIN_DOMAINS` | `comviva.com` | domains allowed to register |
 | `SPEAKUP_AUTO_APPROVE` | `true` | `false` restores an owner approval queue |
 | `SPEAKUP_DEFAULT_ROLE` | `staff` | role granted on self-registration |
+| `SPEAKUP_STRICT_ACCESS` | `false` | `true` refuses to boot on a critical access finding |
 | `SPEAKUP_EDIT_WINDOW_MINUTES` | `30` | how long a reporter may edit |
 | `SPEAKUP_TOKEN_TTL_HOURS` | `12` | session lifetime |
 | `SPEAKUP_CORS_ORIGIN` | `*` dev / same-origin prod | allowed origin |

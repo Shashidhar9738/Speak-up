@@ -9,6 +9,7 @@ const mail = require("./services/mailService");
 const webhooks = require("./services/webhookService");
 const app = require("./app");
 const config = require("./config");
+const { reportAccessRisks } = require("./startupChecks");
 
 function localAddresses() {
   const interfaces = os.networkInterfaces();
@@ -54,6 +55,12 @@ function createServer() {
 db.open();
 sweep();
 audit.record("server.start", "system", { port: config.port, env: config.nodeEnv });
+
+// Who can get into the dashboard is set by environment variables, and the
+// combinations that open it to the public look exactly like the ones that do
+// not. Report before listening: under SPEAKUP_STRICT_ACCESS this refuses to
+// start, which is only meaningful if nothing has been served yet.
+reportAccessRisks(config);
 
 const { server, scheme } = createServer();
 

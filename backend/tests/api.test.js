@@ -364,3 +364,101 @@ test("reset is advertised in seconds, and a refusal says how long to wait", () =
   const retryAfter = Number(refused.headers["Retry-After"]);
   assert.ok(retryAfter > 0 && retryAfter <= 60, `Retry-After should be a short delay in seconds, got ${retryAfter}`);
 });
+
+/* --------------------------- ACCESS CONFIGURATION -------------------------- */
+
+/**
+ * The registration gate is built entirely out of environment variables, and the
+ * combination that opens the dashboard to the public reads exactly like the one
+ * that does not. These pin what startupChecks.js is willing to call a problem.
+ */
+const { accessRisks, reportAccessRisks } = require("../src/startupChecks");
+
+function codes(settings) {
+  return accessRisks(settings).map((risk) => risk.code);
+}
+
+const SAFE = {
+  adminDomains: ["comviva.com"],
+  adminEmails: ["lead@comviva.com"],
+  defaultRole: "staff",
+  autoApprove: false,
+  requireVerification: true,
+  isProduction: true,
+  strictAccess: false
+};
+
+test("a public mail provider with auto-approval is reported as open registration", () => {
+  // The live deployment's exact shape: gmail.com is the allowed domain because
+  // the owner's own address is one, and auto-approval is the default.
+  const found = codes({ ...SAFE, adminDomains: ["gmail.com"], autoApprove: true, requireVerification: false });
+
+  assert.ok(found.includes("open_registration"),
+    "any gmail address on earth could self-approve and nothing said so");
+});
+
+test("a corporate domain with auto-approval is not called open registration", () => {
+  const found = codes({ ...SAFE, autoApprove: true });
+
+  assert.ok(!found.includes("open_registration"),
+    "an ordinary corporate deployment was warned at, which trains people to ignore the warning");
+});
+
+test("a public provider is fine once approvals are queued", () => {
+  const found = codes({ ...SAFE, adminDomains: ["gmail.com"] });
+
+  assert.deepEqual(found, [], "the owner approval queue is the mitigation and was not recognised as one");
+});
+
+test("granting a privileged role on self-registration is reported", () => {
+  for (const role of ["owner", "reviewer"]) {
+    assert.ok(codes({ ...SAFE, defaultRole: role }).includes("privileged_default_role"),
+      `SPEAKUP_DEFAULT_ROLE=${role} hands sensitive reports to anyone who registers`);
+  }
+  assert.ok(!codes({ ...SAFE, defaultRole: "analyst" }).includes("privileged_default_role"));
+});
+
+test("production still running on the placeholder owner addresses is reported", () => {
+  const { DEFAULT_ADMIN_EMAILS } = require("../src/config");
+
+  assert.ok(codes({ ...SAFE, adminEmails: [...DEFAULT_ADMIN_EMAILS] }).includes("placeholder_owners"),
+    "nobody real holds the owner role, so a queued registration can never be approved");
+  assert.ok(!codes({ ...SAFE, adminEmails: [...DEFAULT_ADMIN_EMAILS], isProduction: false }).includes("placeholder_owners"),
+    "the placeholders are how a fresh checkout is meant to run in development");
+});
+
+test("approving accounts without checking the emailed code is reported", () => {
+  assert.ok(codes({ ...SAFE, autoApprove: true, requireVerification: false }).includes("unverified_auto_approval"));
+  assert.ok(!codes({ ...SAFE, autoApprove: true, requireVerification: true }).includes("unverified_auto_approval"));
+});
+
+test("a sound configuration reports nothing at all", () => {
+  assert.deepEqual(accessRisks(SAFE), []);
+});
+
+test("the check reports but does not block by default", () => {
+  const lines = [];
+  const risks = reportAccessRisks(
+    { ...SAFE, adminDomains: ["gmail.com"], autoApprove: true, requireVerification: false },
+    (line) => lines.push(line)
+  );
+
+  assert.ok(risks.length, "the findings were not returned to the caller");
+  assert.ok(lines.join("\n").includes("CRITICAL"), "a critical finding was printed as ordinary chatter");
+});
+
+test("strict mode turns a critical finding into a refusal to start", () => {
+  assert.throws(
+    () => reportAccessRisks(
+      { ...SAFE, adminDomains: ["gmail.com"], autoApprove: true, strictAccess: true },
+      () => {}
+    ),
+    /open_registration/
+  );
+
+  // A warning on its own is not grounds for taking the service down.
+  assert.doesNotThrow(() => reportAccessRisks(
+    { ...SAFE, autoApprove: true, requireVerification: false, strictAccess: true },
+    () => {}
+  ));
+});

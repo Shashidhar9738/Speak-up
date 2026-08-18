@@ -49,6 +49,9 @@ function resolveAuthSecret(environment) {
 const nodeEnv = process.env.NODE_ENV || "development";
 
 module.exports = {
+  // Exported so startupChecks.js can tell "owner deliberately configured" from
+  // "nobody set SPEAKUP_ADMIN_EMAILS and this is the committed placeholder".
+  DEFAULT_ADMIN_EMAILS,
   nodeEnv,
   isProduction: nodeEnv === "production",
   port: Number(process.env.PORT || 3000),
@@ -105,6 +108,12 @@ module.exports = {
   // Role granted on self-registration. "staff" reads complaints but not the
   // sensitive categories, which stay with owners and reviewers.
   defaultRole: process.env.SPEAKUP_DEFAULT_ROLE || "staff",
+
+  // Turns the boot-time access findings in startupChecks.js from a printed
+  // warning into a refusal to start. Off by default: a misconfigured instance
+  // is still serving people, and failing the deploy would trade a privacy
+  // problem for an outage. Turn it on once the settings are known good.
+  strictAccess: String(process.env.SPEAKUP_STRICT_ACCESS || "").toLowerCase() === "true",
 
   // Outbound email, used only for dashboard accounts — never to contact a
   // reporter, who has no address on file by design.
