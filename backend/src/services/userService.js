@@ -211,7 +211,12 @@ async function registerUser({ email, fullName, reason, passwordHash }) {
   // verifyUser consulted the setting, which meant it worked exactly when the
   // emailed code was required and did nothing when it was not.
   const verified = !config.requireVerification;
-  const approved = verified && config.autoApprove;
+  // A bootstrap owner is the person who approves everyone else, so queueing
+  // them behind their own approval leaves an instance nobody can get into.
+  // canSignIn already lets them through regardless of status; matching that
+  // here keeps the account record honest instead of showing them a "waiting
+  // for approval" screen they are not actually waiting on.
+  const approved = verified && (config.autoApprove || isBootstrapOwner(target));
 
   const user = upsertUser({
     email: target, fullName: fullName || "", reason: reason || "",

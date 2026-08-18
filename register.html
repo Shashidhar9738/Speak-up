@@ -227,6 +227,20 @@ document.getElementById('registerForm').addEventListener('submit', async functio
       return;
     }
 
+    // No code is issued when email verification is switched off; the account is
+    // simply waiting for an owner to let it in. This screen used to be the only
+    // alternative to 'approved', so that case landed on the code form and asked
+    // for six digits that were never sent and could never arrive.
+    if (result.status === 'pending_approval') {
+      document.getElementById('doneIcon').innerHTML = '<i class="ti ti-clock"></i>';
+      document.getElementById('doneTitle').textContent = 'Waiting for approval';
+      document.getElementById('doneMsg').textContent = result.message ||
+        'Your account has been created. A SpeakUp owner has to approve it before you can sign in.';
+      document.getElementById('checkBtn').textContent = 'Check my status';
+      show(3);
+      return;
+    }
+
     document.getElementById('sentTo').textContent = 'We sent a 6-digit code to ' + email + '.';
 
     // Only present when the server has no SMTP configured (development).
